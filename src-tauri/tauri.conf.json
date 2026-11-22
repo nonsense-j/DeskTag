@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "DeskTag",
   "version": "1.0.0",
-  "identifier": "com.desktag.app",
+  "identifier": "com.nonsensej.desktag",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",

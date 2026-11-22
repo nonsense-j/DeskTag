@@ -1,4 +1,4 @@
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_opener::OpenerExt;
 
 use crate::models::{
@@ -28,8 +28,23 @@ pub fn load_app_state(state: State<'_, AppState>) -> AppStateBundle {
 }
 
 #[tauri::command]
-pub fn save_app_data(state: State<'_, AppState>, data: AppData) -> Result<(), String> {
-    state.storage.save_app_data(data)
+pub fn save_app_data(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    data: AppData,
+) -> Result<(), String> {
+    state.storage.save_app_data(data)?;
+    let persisted = state.storage.load_app_data();
+    let _ = app.emit("desktag://data-updated", &persisted);
+
+    let cfg = state.storage.load_webdav_config();
+    if cfg.enabled && cfg.debounce_push {
+        let webdav = state.webdav.clone();
+        tauri::async_runtime::spawn(async move {
+            let _ = webdav.trigger_debounced_sync().await;
+        });
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -38,7 +53,18 @@ pub fn save_device_settings(
     state: State<'_, AppState>,
     device: DeviceSettings,
 ) -> Result<DockState, String> {
+    let prev = state.storage.load_device_settings();
     state.storage.save_device_settings(&device)?;
+
+    if prev.launch_at_login != device.launch_at_login {
+        crate::apply_autostart(&app, device.launch_at_login);
+    }
+    if prev.global_shortcut_toggle != device.global_shortcut_toggle
+        || prev.global_shortcut_quick_add != device.global_shortcut_quick_add
+    {
+        crate::register_global_shortcuts(&app, &device);
+    }
+
     Ok(state.dock.sync_from_device(&app, &device))
 }
 
@@ -73,6 +99,11 @@ pub fn set_auto_hide(
     device.auto_hide = enabled;
     state.storage.save_device_settings(&device)?;
     Ok(state.dock.set_auto_hide(&app, enabled))
+}
+
+#[tauri::command]
+pub fn set_auto_hide_paused(state: State<'_, AppState>, paused: bool) {
+    state.dock.set_auto_hide_paused(paused);
 }
 
 #[tauri::command]
@@ -176,10 +207,18 @@ pub fn export_backup(
 
 #[tauri::command]
 pub fn import_backup(
+    app: AppHandle,
     state: State<'_, AppState>,
     source_path: Option<String>,
 ) -> Result<ImportBackupResult, String> {
-    state.storage.import_backup(source_path)
+    let result = state.storage.import_backup(source_path)?;
+    let _ = app.emit("desktag://data-updated", &result.data);
+    if let Some(ref dev) = result.device {
+        let _ = state.dock.sync_from_device(&app, dev);
+        crate::apply_autostart(&app, dev.launch_at_login);
+        crate::register_global_shortcuts(&app, dev);
+    }
+    Ok(result)
 }
 
 #[tauri::command]
@@ -232,15 +271,21 @@ pub fn get_notifications(state: State<'_, AppState>) -> Vec<NotificationItem> {
 
 #[tauri::command]
 pub fn mark_notifications_read(
+    app: AppHandle,
     state: State<'_, AppState>,
     ids: Option<Vec<String>>,
 ) -> Result<Vec<NotificationItem>, String> {
-    state.reminders.mark_notifications_read(ids)
+    let updated = state.reminders.mark_notifications_read(ids)?;
+    let _ = app.emit("desktag://notifications-updated", &updated);
+    Ok(updated)
 }
 
 #[tauri::command]
-pub fn clear_notifications(state: State<'_, AppState>) -> Result<(), String> {
-    state.reminders.clear_notifications()
+pub fn clear_notifications(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    state.reminders.clear_notifications()?;
+    let empty: Vec<NotificationItem> = Vec::new();
+    let _ = app.emit("desktag://notifications-updated", &empty);
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -282,38 +327,55 @@ pub async fn webdav_preview(
 }
 
 #[tauri::command]
-pub async fn webdav_sync_now(state: State<'_, AppState>) -> Result<SyncExecutionResult, String> {
-    state.webdav.sync_now().await
+pub async fn webdav_sync_now(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<SyncExecutionResult, String> {
+    let res = state.webdav.sync_now().await?;
+    emit_sync_result(&app, &res);
+    Ok(res)
 }
 
 #[tauri::command]
 pub async fn webdav_sync_previewed(
+    app: AppHandle,
     state: State<'_, AppState>,
     token: String,
 ) -> Result<SyncExecutionResult, String> {
-    state.webdav.sync_previewed(token).await
+    let res = state.webdav.sync_previewed(token).await?;
+    emit_sync_result(&app, &res);
+    Ok(res)
 }
 
 #[tauri::command]
 pub async fn webdav_undo_sync(
+    app: AppHandle,
     state: State<'_, AppState>,
     force: Option<bool>,
 ) -> Result<SyncExecutionResult, String> {
-    state.webdav.undo_sync(force.unwrap_or(false)).await
+    let res = state.webdav.undo_sync(force.unwrap_or(false)).await?;
+    emit_sync_result(&app, &res);
+    Ok(res)
 }
 
 #[tauri::command]
 pub async fn webdav_restore_from_server(
+    app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<SyncExecutionResult, String> {
-    state.webdav.restore_from_server().await
+    let res = state.webdav.restore_from_server().await?;
+    emit_sync_result(&app, &res);
+    Ok(res)
 }
 
 #[tauri::command]
 pub async fn webdav_force_upload(
+    app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<SyncExecutionResult, String> {
-    state.webdav.force_upload().await
+    let res = state.webdav.force_upload().await?;
+    emit_sync_result(&app, &res);
+    Ok(res)
 }
 
 #[tauri::command]
@@ -333,6 +395,16 @@ pub async fn webdav_import_setup_text(
 #[tauri::command]
 pub async fn trigger_debounced_sync(state: State<'_, AppState>) -> Result<(), String> {
     state.webdav.trigger_debounced_sync().await
+}
+
+fn emit_sync_result(app: &AppHandle, res: &SyncExecutionResult) {
+    let _ = app.emit("desktag://sync-status", &res.status);
+    if res.changed_local {
+        if let Some(ref data) = res.data {
+            let _ = app.emit("desktag://data-synced", data);
+            let _ = app.emit("desktag://data-updated", data);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

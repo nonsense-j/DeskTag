@@ -1,0 +1,430 @@
+name: Build & Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  build-windows:
+    name: Build Windows (x64)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Setup Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+          key: windows-x64
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck frontend
+        run: pnpm typecheck
+
+      - name: Build frontend
+        run: pnpm build
+
+      - name: Run Rust unit tests
+        working-directory: src-tauri
+        run: cargo test --lib
+
+      - name: Build Tauri Windows installers
+        run: pnpm tauri build --ci
+
+      - name: Stage Windows release artifacts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pkg = Get-Content -Raw package.json | ConvertFrom-Json
+          $ver = $pkg.version
+          $outDir = "release-assets/windows"
+          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+
+          $nsis = Get-ChildItem -Path "src-tauri/target/release/bundle/nsis" -Filter "*.exe" -ErrorAction SilentlyContinue
+          $msi  = Get-ChildItem -Path "src-tauri/target/release/bundle/msi"  -Filter "*.msi" -ErrorAction SilentlyContinue
+          $bin  = Get-Item -Path "src-tauri/target/release/desktag.exe" -ErrorAction SilentlyContinue
+
+          if (-not $nsis) { throw "NSIS installer (.exe) not found in src-tauri/target/release/bundle/nsis" }
+          if (-not $msi)  { throw "MSI installer (.msi) not found in src-tauri/target/release/bundle/msi" }
+          if (-not $bin)  { throw "Standalone executable not found at src-tauri/target/release/desktag.exe" }
+
+          foreach ($f in $nsis) { Copy-Item $f.FullName -Destination $outDir }
+          foreach ($f in $msi)  { Copy-Item $f.FullName -Destination $outDir }
+          Copy-Item $bin.FullName -Destination (Join-Path $outDir "DeskTag_${ver}_x64-standalone.exe")
+
+          Get-ChildItem -Path $outDir | Format-Table Name, Length
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktag-windows-x64
+          path: release-assets/windows/*
+          if-no-files-found: error
+
+  build-macos:
+    name: Build macOS (${{ matrix.arch }})
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            arch: arm64
+          - target: x86_64-apple-darwin
+            arch: x64
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Setup Rust stable (${{ matrix.target }})
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Rust dependencies
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+          key: macos-${{ matrix.target }}
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Tauri macOS DMG (${{ matrix.target }})
+        run: pnpm tauri build --ci --target ${{ matrix.target }}
+
+      - name: Stage macOS DMG artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT_DIR="release-assets/macos-${{ matrix.arch }}"
+          mkdir -p "$OUT_DIR"
+          shopt -s nullglob
+          DMGS=(src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg)
+          if [ "${#DMGS[@]}" -eq 0 ]; then
+            echo "::error::No .dmg artifact found for ${{ matrix.target }}"
+            exit 1
+          fi
+          cp "${DMGS[@]}" "$OUT_DIR/"
+          ls -lh "$OUT_DIR"
+
+      - name: Upload macOS DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktag-macos-${{ matrix.arch }}
+          path: release-assets/macos-${{ matrix.arch }}/*.dmg
+          if-no-files-found: error
+
+  build-android:
+    name: Build Android (arm64 APK)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Configure Android SDK & NDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_DIR="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          if [ ! -d "$SDK_DIR" ]; then
+            echo "::error::Android SDK not found at $SDK_DIR"
+            exit 1
+          fi
+
+          SDKMANAGER=""
+          for candidate in \
+            "$SDK_DIR/cmdline-tools/latest/bin/sdkmanager" \
+            "$SDK_DIR/cmdline-tools/bin/sdkmanager" \
+            "$SDK_DIR/tools/bin/sdkmanager"; do
+            if [ -x "$candidate" ]; then
+              SDKMANAGER="$candidate"
+              break
+            fi
+          done
+
+          if [ -n "$SDKMANAGER" ]; then
+            yes | "$SDKMANAGER" --sdk_root="$SDK_DIR" --licenses >/dev/null 2>&1 || true
+          fi
+
+          # Prefer preinstalled NDK r27 LTS; install r27 if missing, else fall back to latest installed NDK.
+          NDK_DIR=""
+          if [ -d "$SDK_DIR/ndk" ]; then
+            NDK_DIR="$(find "$SDK_DIR/ndk" -mindepth 1 -maxdepth 1 -type d -name '27.*' | sort -V | tail -n 1 || true)"
+          fi
+          if [ -z "$NDK_DIR" ] && [ -n "$SDKMANAGER" ]; then
+            "$SDKMANAGER" --sdk_root="$SDK_DIR" "ndk;27.2.12479018" || true
+            if [ -d "$SDK_DIR/ndk" ]; then
+              NDK_DIR="$(find "$SDK_DIR/ndk" -mindepth 1 -maxdepth 1 -type d -name '27.*' | sort -V | tail -n 1 || true)"
+            fi
+          fi
+          if [ -z "$NDK_DIR" ] && [ -n "${ANDROID_NDK_LATEST_HOME:-}" ] && [ -d "${ANDROID_NDK_LATEST_HOME}" ]; then
+            NDK_DIR="$ANDROID_NDK_LATEST_HOME"
+          fi
+          if [ -z "$NDK_DIR" ] && [ -d "$SDK_DIR/ndk" ]; then
+            NDK_DIR="$(find "$SDK_DIR/ndk" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1 || true)"
+          fi
+          if [ -z "$NDK_DIR" ]; then
+            echo "::error::Android NDK could not be located or installed under $SDK_DIR/ndk"
+            exit 1
+          fi
+
+          {
+            echo "ANDROID_HOME=$SDK_DIR"
+            echo "ANDROID_SDK_ROOT=$SDK_DIR"
+            echo "NDK_HOME=$NDK_DIR"
+            echo "ANDROID_NDK_HOME=$NDK_DIR"
+          } >> "$GITHUB_ENV"
+
+          if [ -d "$SDK_DIR/platform-tools" ]; then
+            echo "$SDK_DIR/platform-tools" >> "$GITHUB_PATH"
+          fi
+          if [ -d "$SDK_DIR/cmdline-tools/latest/bin" ]; then
+            echo "$SDK_DIR/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          fi
+
+          echo "JAVA_HOME=${JAVA_HOME:-<unset>}"
+          echo "ANDROID_HOME=$SDK_DIR"
+          echo "NDK_HOME=$NDK_DIR"
+
+      - name: Setup Rust stable & Android targets
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android, armv7-linux-androideabi, x86_64-linux-android
+
+      - name: Cache Rust dependencies
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+          key: android-aarch64
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Initialize Tauri Android project (if missing)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -d "src-tauri/gen/android" ]; then
+            pnpm tauri android init --ci --skip-targets-install
+          else
+            echo "src-tauri/gen/android already present; skipping android init."
+          fi
+
+      - name: Build Android APK (aarch64)
+        run: pnpm tauri android build --ci --apk --target aarch64
+
+      - name: Stage & sign Android APK
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          VER="$(node -p "require('./package.json').version")"
+          OUT_DIR="release-assets/android"
+          mkdir -p "$OUT_DIR"
+
+          RAW_APK="$(find src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' | sort | head -n 1 || true)"
+          if [ -z "$RAW_APK" ]; then
+            echo "::error::No APK produced under src-tauri/gen/android/app/build/outputs/apk"
+            exit 1
+          fi
+          echo "Found built APK: $RAW_APK"
+
+          BUILD_TOOLS=""
+          if [ -d "$ANDROID_HOME/build-tools" ]; then
+            BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1 || true)"
+          fi
+
+          if [ -n "$BUILD_TOOLS" ] && [ -x "$BUILD_TOOLS/zipalign" ] && [ -x "$BUILD_TOOLS/apksigner" ]; then
+            ALIGNED_APK="$RUNNER_TEMP/desktag-aligned.apk"
+            "$BUILD_TOOLS/zipalign" -p -f 4 "$RAW_APK" "$ALIGNED_APK"
+
+            if [ -n "${ANDROID_KEYSTORE_BASE64:-}" ]; then
+              KEYSTORE_PATH="$RUNNER_TEMP/release.keystore"
+              printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+              FINAL_APK="$OUT_DIR/DeskTag_${VER}_android_arm64.apk"
+              "$BUILD_TOOLS/apksigner" sign \
+                --ks "$KEYSTORE_PATH" \
+                --ks-pass "pass:${ANDROID_KEYSTORE_PASSWORD}" \
+                --ks-key-alias "${ANDROID_KEY_ALIAS}" \
+                --key-pass "pass:${ANDROID_KEY_PASSWORD:-$ANDROID_KEYSTORE_PASSWORD}" \
+                --out "$FINAL_APK" \
+                "$ALIGNED_APK"
+            else
+              KEYSTORE_PATH="$RUNNER_TEMP/ci-debug.keystore"
+              keytool -genkeypair -noprompt \
+                -keystore "$KEYSTORE_PATH" \
+                -storepass android \
+                -alias androiddebugkey \
+                -keypass android \
+                -keyalg RSA \
+                -keysize 2048 \
+                -validity 10000 \
+                -dname "CN=DeskTag CI,O=DeskTag,C=US"
+              FINAL_APK="$OUT_DIR/DeskTag_${VER}_android_arm64.apk"
+              "$BUILD_TOOLS/apksigner" sign \
+                --ks "$KEYSTORE_PATH" \
+                --ks-pass pass:android \
+                --ks-key-alias androiddebugkey \
+                --key-pass pass:android \
+                --out "$FINAL_APK" \
+                "$ALIGNED_APK"
+            fi
+
+            "$BUILD_TOOLS/apksigner" verify "$FINAL_APK"
+          else
+            cp "$RAW_APK" "$OUT_DIR/DeskTag_${VER}_android_arm64_unsigned.apk"
+          fi
+
+          ls -lh "$OUT_DIR"
+
+      - name: Upload Android APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktag-android-arm64
+          path: release-assets/android/*.apk
+          if-no-files-found: error
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: [build-windows, build-macos, build-android]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all platform artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist-artifacts
+          merge-multiple: true
+
+      - name: Generate SHA-256 checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist-artifacts
+          sha256sum * > "$RUNNER_TEMP/SHA256SUMS.txt"
+          mv "$RUNNER_TEMP/SHA256SUMS.txt" SHA256SUMS.txt
+          ls -lh
+          cat SHA256SUMS.txt
+
+      - name: Create or update GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          NOTES_FILE="$RUNNER_TEMP/release-notes.md"
+
+          cat <<EOF > "$NOTES_FILE"
+          ## DeskTag ${TAG}
+
+          **待办贴开源跨平台复刻 + 端到端加密 WebDAV 云同步**  
+          *Open-source cross-platform Daibantie recreation with E2EE WebDAV cloud sync.*
+
+          ### 下载说明 / Downloads
+
+          - **Windows (x64)**:
+            - \`*-setup.exe\` — NSIS 安装包 / NSIS installer
+            - \`*.msi\` — MSI 安装包 / MSI installer
+            - \`*-standalone.exe\` — 免安装绿色单文件 / Portable standalone executable
+          - **macOS**:
+            - \`*_aarch64.dmg\` — Apple Silicon (M1/M2/M3/M4)
+            - \`*_x64.dmg\` — Intel Mac
+            - *提示 / Note*: 若首次打开未签名版本提示「已损坏」，请在终端执行 \`xattr -cr /Applications/DeskTag.app\`。
+          - **Android**:
+            - \`*_android_arm64.apk\` — Android ARM64 安装包（可直接安装体验）
+          - **校验文件 / Checksums**:
+            - \`SHA256SUMS.txt\` — 所有发行产物的 SHA-256 校验值
+
+          ### 核心亮点 / Highlights
+
+          - 6 种贴边停靠与外露页签栏、多显示器工作区防溢出与全局快捷键
+          - 待办子任务进度胶囊、自然语言识别、批量粘贴与自定义清单
+          - 普通 / 时间轴双模式便签（折叠标题、大纲、表格、附件、\`@\` 双向关联、隐私锁）
+          - 独立农历日历、四象限、标准/重复提醒与免打扰时段、11 款内置皮肤
+          - Magpie 架构端到端加密 WebDAV 云同步（AES-256-GCM + PBKDF2-SHA256、三方逐项合并、同步预览/撤销、\`desktag-sync:...\` 一键配置）
+          EOF
+
+          PRERELEASE_FLAGS=()
+          if [[ "$TAG" == *-* ]]; then
+            PRERELEASE_FLAGS=(--prerelease)
+          fi
+
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "DeskTag ${TAG}" \
+              --notes-file "$NOTES_FILE"
+            gh release upload "$TAG" dist-artifacts/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber
+          else
+            gh release create "$TAG" dist-artifacts/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "DeskTag ${TAG}" \
+              --notes-file "$NOTES_FILE" \
+              "${PRERELEASE_FLAGS[@]+"${PRERELEASE_FLAGS[@]}"}"
+          fi

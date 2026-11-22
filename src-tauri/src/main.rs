@@ -2,5 +2,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
+    desktag_lib::prepare_runtime_env();
     desktag_lib::run()
 }

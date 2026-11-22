@@ -224,6 +224,12 @@ export async function setAutoHide(enabled: boolean): Promise<DockState> {
   return fallbackDockState(dev);
 }
 
+export async function setAutoHidePaused(paused: boolean): Promise<void> {
+  if (isTauriRuntime()) {
+    return invoke<void>('set_auto_hide_paused', { paused });
+  }
+}
+
 export async function setAlwaysOnTop(enabled: boolean): Promise<DockState> {
   if (isTauriRuntime()) {
     return invoke<DockState>('set_always_on_top', { enabled });
@@ -687,6 +693,7 @@ export const tauriApi = {
   getDockState,
   setDockMode,
   setAutoHide,
+  setAutoHidePaused,
   setAlwaysOnTop,
   expandPanel,
   collapsePanel,
