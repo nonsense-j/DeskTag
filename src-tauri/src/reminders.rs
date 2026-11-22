@@ -315,6 +315,9 @@ pub fn process_due_reminders_at(
     storage: &StorageManager,
     now_local: DateTime<Local>,
 ) -> Vec<NotificationItem> {
+    if !storage.has_active_reminders() {
+        return Vec::new();
+    }
     let mut data = storage.load_app_data();
     if is_in_dnd_window(
         now_local.time(),

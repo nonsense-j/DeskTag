@@ -86,6 +86,17 @@ export const TodoDetailModal: React.FC = () => {
   const todoImgInputRef = useRef<HTMLInputElement | null>(null);
   const subImgInputRef = useRef<HTMLInputElement | null>(null);
   const subImgTargetIdRef = useRef<string | null>(null);
+  const loadedImageKeysRef = useRef<Set<string>>(new Set());
+
+  // Release cached base64 image URLs whenever the modal closes or switches todos
+  useEffect(() => {
+    loadedImageKeysRef.current.clear();
+    setImageUrls({});
+    setPreviewImgUrl(null);
+    setShowLinkPicker(false);
+    setReplacingLinkTargetId(null);
+    setLinkQuery('');
+  }, [editingTodoId]);
 
   // Hydrate data URLs for all attached images in todo & subtasks
   useEffect(() => {
@@ -95,16 +106,39 @@ export const TodoDetailModal: React.FC = () => {
       ...todo.noteImages,
       ...todo.subtasks.flatMap((s) => s.noteImages),
     ];
-    if (refs.length === 0) return;
+    const activePaths = new Set(refs.map((r) => r.relativePath));
+
+    // Drop stale entries if images were removed while editing
+    let pruned = false;
+    for (const key of Array.from(loadedImageKeysRef.current)) {
+      if (!activePaths.has(key)) {
+        loadedImageKeysRef.current.delete(key);
+        pruned = true;
+      }
+    }
+    if (pruned) {
+      setImageUrls((prev) => {
+        const next: Record<string, string> = {};
+        for (const [k, v] of Object.entries(prev)) {
+          if (activePaths.has(k)) next[k] = v;
+        }
+        return next;
+      });
+    }
+
+    const pending = refs.filter((ref) => !loadedImageKeysRef.current.has(ref.relativePath));
+    if (pending.length === 0) return;
 
     (async () => {
       const next: Record<string, string> = {};
       await Promise.all(
-        refs.map(async (ref) => {
-          if (imageUrls[ref.relativePath]) return;
+        pending.map(async (ref) => {
           try {
             const url = await api.readAttachmentDataUrl(ref.relativePath, ref.mime);
-            if (url) next[ref.relativePath] = url;
+            if (url) {
+              loadedImageKeysRef.current.add(ref.relativePath);
+              next[ref.relativePath] = url;
+            }
           } catch {
             // ignore
           }
@@ -118,7 +152,7 @@ export const TodoDetailModal: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [todo, imageUrls]);
+  }, [todo]);
 
   if (!todo) return null;
 
@@ -163,6 +197,7 @@ export const TodoDetailModal: React.FC = () => {
         kind: 'image',
         base64Data,
       });
+      loadedImageKeysRef.current.add(saved.relativePath);
       setImageUrls((prev) => ({ ...prev, [saved.relativePath]: base64Data }));
       updateTodo(todo.id, { noteImages: [...todo.noteImages, saved] });
     } catch (err) {
@@ -185,6 +220,7 @@ export const TodoDetailModal: React.FC = () => {
         kind: 'image',
         base64Data,
       });
+      loadedImageKeysRef.current.add(saved.relativePath);
       setImageUrls((prev) => ({ ...prev, [saved.relativePath]: base64Data }));
       updateSubtask(todo.id, subId, { noteImages: [...targetSub.noteImages, saved] });
     } catch (err) {

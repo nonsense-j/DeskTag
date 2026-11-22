@@ -18,6 +18,9 @@ import {
   type TimelineEntry,
   type TodoItem,
   type TodoList,
+  type UpdateCheckResult,
+  type UpdateDownloadProgress,
+  type UpdateInstallResult,
   type WebDavConfigView,
   type WebDavStatusView,
   createDefaultAppData,
@@ -419,17 +422,25 @@ function defaultWebDavStatusView(): WebDavStatusView {
   };
 }
 
+function isMainWindowRoute(): boolean {
+  if (typeof window === 'undefined') return true;
+  const win = new URLSearchParams(window.location.search).get('window');
+  return !win || win === 'main';
+}
+
 function defaultPlatformInfo(): PlatformInfo {
   const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
   const isAndroid = /Android/i.test(ua);
   const isMac = /Macintosh|Mac OS X/i.test(ua);
   const isWin = /Windows/i.test(ua);
   const platform = isAndroid ? 'android' : isMac ? 'macos' : isWin ? 'windows' : 'linux';
+  const appVersion =
+    typeof __APP_VERSION__ === 'string' && __APP_VERSION__.trim() ? __APP_VERSION__ : '1.1.0';
   return {
     platform,
     isDesktop: !isAndroid,
     isMobile: isAndroid,
-    appVersion: '1.0.1',
+    appVersion,
     supportsEdgeDock: !isAndroid,
     supportsGlobalShortcut: !isAndroid,
     supportsTray: !isAndroid,
@@ -557,6 +568,7 @@ export interface DeskTagStoreValue {
   expandPanel: () => Promise<void>;
   collapsePanel: () => Promise<void>;
   hideToTray: () => Promise<void>;
+  quitApp: () => Promise<void>;
   resetPanelLayout: () => Promise<void>;
   replaceAppData: (newData: AppData, persist?: boolean) => void;
   applySyncedAppData: (newData: AppData) => void;
@@ -571,6 +583,19 @@ export interface DeskTagStoreValue {
   triggerWebdavSyncNow: () => Promise<SyncExecutionResult>;
   setWebdavConfigState: (cfg: WebDavConfigView) => void;
   setWebdavStatusState: (status: WebDavStatusView) => void;
+
+  // App Updates
+  updateResult: UpdateCheckResult | null;
+  updateChecking: boolean;
+  updateError: string | null;
+  updateInstalling: boolean;
+  updateProgress: UpdateDownloadProgress | null;
+  updateBannerDismissed: boolean;
+  hasUnignoredUpdate: boolean;
+  checkForUpdates: (options?: { force?: boolean; silent?: boolean }) => Promise<UpdateCheckResult | null>;
+  installAvailableUpdate: () => Promise<UpdateInstallResult | null>;
+  skipUpdateVersion: (version: string | null) => Promise<void>;
+  dismissUpdateBanner: () => void;
 }
 
 const DeskTagContext = createContext<DeskTagStoreValue | null>(null);
@@ -619,11 +644,23 @@ export const DeskTagProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [unlockedGroupIds, setUnlockedGroupIds] = useState<Set<string>>(() => new Set());
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [quickAddFocusTrigger, setQuickAddFocusTrigger] = useState(0);
+  const [updateResult, setUpdateResult] = useState<UpdateCheckResult | null>(null);
+  const [updateChecking, setUpdateChecking] = useState(false);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+  const [updateInstalling, setUpdateInstalling] = useState(false);
+  const [updateProgress, setUpdateProgress] = useState<UpdateDownloadProgress | null>(null);
+  const [updateBannerDismissed, setUpdateBannerDismissed] = useState(false);
 
   const saveTimerRef = useRef<number | null>(null);
   const toastTimerRef = useRef<number | null>(null);
   const latestDataRef = useRef<AppData>(data);
   latestDataRef.current = data;
+  const latestDeviceRef = useRef<DeviceSettings>(device);
+  latestDeviceRef.current = device;
+  const latestUpdateRef = useRef<UpdateCheckResult | null>(updateResult);
+  latestUpdateRef.current = updateResult;
+  const updateCheckingRef = useRef(false);
+  const updateInstallingRef = useRef(false);
 
   const isMobileLayout = platform.isMobile || narrowViewport;
 
@@ -680,9 +717,9 @@ export const DeskTagProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   }, [isMobileLayout]);
 
-  // Pause desktop edge auto-hide while any modal, popover, or menu is open
+  // Pause desktop edge auto-hide while any modal, popover, or menu is open (main window only)
   useEffect(() => {
-    if (!platform.supportsEdgeDock) return;
+    if (!platform.supportsEdgeDock || !isMainWindowRoute()) return;
     const anyOverlayOpen = Boolean(
       editingTodoId ||
         reminderTodoId ||
@@ -859,8 +896,13 @@ export const DeskTagProvider: React.FC<{ children: React.ReactNode }> = ({ child
           setShowQuadrant(false);
           setQuickAddFocusTrigger((n) => n + 1);
         });
+        const u7 = await listen<UpdateDownloadProgress>('desktag://update-progress', (ev) => {
+          if (ev.payload) {
+            setUpdateProgress(ev.payload);
+          }
+        });
 
-        unlisteners = [u1, u2, u3, u4, u5, u6];
+        unlisteners = [u1, u2, u3, u4, u5, u6, u7];
       } catch (err) {
         console.warn('[DeskTag] event listener setup skipped:', err);
       }
@@ -1758,7 +1800,8 @@ export const DeskTagProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const updateDeviceSettings = useCallback(
     async (patch: Partial<DeviceSettings>) => {
-      const next: DeviceSettings = { ...device, ...patch };
+      const next: DeviceSettings = { ...latestDeviceRef.current, ...patch };
+      latestDeviceRef.current = next;
       setDevice(next);
       try {
         const nextDock = await api.saveDeviceSettings(next);
@@ -1767,7 +1810,7 @@ export const DeskTagProvider: React.FC<{ children: React.ReactNode }> = ({ child
         console.error('[DeskTag] saveDeviceSettings failed:', err);
       }
     },
-    [device],
+    [],
   );
 
   const setDockMode = useCallback(async (mode: DockMode) => {
@@ -1828,6 +1871,25 @@ export const DeskTagProvider: React.FC<{ children: React.ReactNode }> = ({ child
     } catch (err) {
       console.error('[DeskTag] hideToTray failed:', err);
     }
+  }, []);
+
+  const quitApp = useCallback(async () => {
+    try {
+      await api.quitApp();
+      return;
+    } catch (err) {
+      console.error('[DeskTag] quitApp failed:', err);
+    }
+    if (api.isTauriRuntime()) {
+      try {
+        const { getCurrentWindow } = await import('@tauri-apps/api/window');
+        await getCurrentWindow().close();
+        return;
+      } catch {
+        // Fallback below
+      }
+    }
+    window.close();
   }, []);
 
   const resetPanelLayout = useCallback(async () => {
@@ -1915,6 +1977,115 @@ export const DeskTagProvider: React.FC<{ children: React.ReactNode }> = ({ child
       };
     }
   }, [showToast, webdavStatus]);
+
+  // -------------------------------------------------------------------------
+  // App Updates (GitHub Releases)
+  // -------------------------------------------------------------------------
+
+  const hasUnignoredUpdate = Boolean(
+    updateResult?.hasUpdate &&
+      updateResult.latestVersion !== device.skippedUpdateVersion,
+  );
+
+  const checkForUpdates = useCallback(
+    async (options?: { force?: boolean; silent?: boolean }): Promise<UpdateCheckResult | null> => {
+      const force = Boolean(options?.force);
+      const silent = Boolean(options?.silent);
+      if (updateCheckingRef.current) {
+        return latestUpdateRef.current;
+      }
+      updateCheckingRef.current = true;
+      setUpdateChecking(true);
+      if (!silent) {
+        setUpdateError(null);
+      }
+      try {
+        const res = await api.checkForUpdate(force);
+        latestUpdateRef.current = res;
+        setUpdateResult(res);
+        setUpdateError(null);
+        setDevice((prev) => {
+          const next = { ...prev, lastUpdateCheckAt: res.checkedAt };
+          latestDeviceRef.current = next;
+          return next;
+        });
+        if (res.hasUpdate && res.latestVersion !== latestDeviceRef.current.skippedUpdateVersion) {
+          setUpdateBannerDismissed(false);
+        }
+        return res;
+      } catch (err) {
+        if (!silent) {
+          const msg = err instanceof Error ? err.message : String(err);
+          setUpdateError(msg || '检查更新失败，请检查网络或代理设置后重试');
+        }
+        return null;
+      } finally {
+        updateCheckingRef.current = false;
+        setUpdateChecking(false);
+      }
+    },
+    [],
+  );
+
+  const installAvailableUpdate = useCallback(async (): Promise<UpdateInstallResult | null> => {
+    const current = latestUpdateRef.current;
+    if (!current || !current.hasUpdate || updateInstallingRef.current) {
+      return null;
+    }
+    updateInstallingRef.current = true;
+    setUpdateInstalling(true);
+    setUpdateError(null);
+    setUpdateProgress({
+      stage: 'downloading',
+      downloadedBytes: 0,
+      totalBytes: current.recommendedAsset?.size ?? null,
+      percent: 0,
+      message: '准备下载更新…',
+    });
+    try {
+      const res = await api.downloadAndInstallUpdate(current);
+      if (res.message) {
+        showToast(res.message);
+      }
+      if (res.action !== 'relaunched') {
+        updateInstallingRef.current = false;
+        setUpdateInstalling(false);
+      }
+      return res;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setUpdateError(msg || '下载或安装更新失败');
+      setUpdateProgress({
+        stage: 'error',
+        downloadedBytes: 0,
+        totalBytes: current.recommendedAsset?.size ?? null,
+        percent: null,
+        message: msg,
+      });
+      showToast(`更新失败：${msg}`);
+      updateInstallingRef.current = false;
+      setUpdateInstalling(false);
+      return null;
+    }
+  }, [showToast]);
+
+  const skipUpdateVersion = useCallback(
+    async (version: string | null) => {
+      await updateDeviceSettings({ skippedUpdateVersion: version });
+      if (version) {
+        setUpdateBannerDismissed(true);
+        showToast(`已跳过版本 v${version}`);
+      } else {
+        setUpdateBannerDismissed(false);
+        showToast('已取消跳过此版本');
+      }
+    },
+    [showToast, updateDeviceSettings],
+  );
+
+  const dismissUpdateBanner = useCallback(() => {
+    setUpdateBannerDismissed(true);
+  }, []);
 
   // Also format time string helper kept referenced (avoid unused import)
   void pad2;
@@ -2016,6 +2187,7 @@ export const DeskTagProvider: React.FC<{ children: React.ReactNode }> = ({ child
     expandPanel,
     collapsePanel,
     hideToTray,
+    quitApp,
     resetPanelLayout,
     replaceAppData,
     applySyncedAppData,
@@ -2026,6 +2198,17 @@ export const DeskTagProvider: React.FC<{ children: React.ReactNode }> = ({ child
     triggerWebdavSyncNow,
     setWebdavConfigState: setWebdavConfig,
     setWebdavStatusState: setWebdavStatus,
+    updateResult,
+    updateChecking,
+    updateError,
+    updateInstalling,
+    updateProgress,
+    updateBannerDismissed,
+    hasUnignoredUpdate,
+    checkForUpdates,
+    installAvailableUpdate,
+    skipUpdateVersion,
+    dismissUpdateBanner,
   };
 
   return React.createElement(DeskTagContext.Provider, { value }, children);

@@ -24,9 +24,14 @@ import {
 import { NotificationPopover } from './NotificationPopover';
 import { SkinPopover } from './SkinPopover';
 
-export const PanelHeader: React.FC = () => {
+export interface PanelHeaderProps {
+  onOpenSettingsAbout?: () => void;
+}
+
+export const PanelHeader: React.FC<PanelHeaderProps> = ({ onOpenSettingsAbout }) => {
   const {
     data,
+    device,
     dock,
     platform,
     webdavStatus,
@@ -35,9 +40,12 @@ export const PanelHeader: React.FC = () => {
     showNotifications,
     showMoreMenu,
     navHistory,
+    updateResult,
+    hasUnignoredUpdate,
     toggleAutoHide,
     toggleAlwaysOnTop,
     hideToTray,
+    quitApp,
     resetPanelLayout,
     setShowSkinPopover,
     setShowNotifications,
@@ -67,6 +75,28 @@ export const PanelHeader: React.FC = () => {
     void api.openCalendarWindow().catch((err) => {
       showToast(`打开日历失败：${err instanceof Error ? err.message : String(err)}`);
     });
+  };
+
+  const handleQuitApp = async () => {
+    closeAllPopovers();
+    await quitApp();
+  };
+
+  const handleOpenSettingsAbout = () => {
+    closeAllPopovers();
+    if (onOpenSettingsAbout) {
+      onOpenSettingsAbout();
+    } else {
+      setShowSettings(true, 'about');
+    }
+  };
+
+  const handleHeaderClose = () => {
+    if (device.closeToTray !== false) {
+      void hideToTray();
+    } else {
+      void handleQuitApp();
+    }
   };
 
   const handleQuickExport = async () => {
@@ -183,19 +213,20 @@ export const PanelHeader: React.FC = () => {
             closeAllPopovers();
             setShowMoreMenu(next);
           }}
-          title="更多功能"
+          title={hasUnignoredUpdate ? '更多功能（发现新版本）' : '更多功能'}
           aria-label="更多功能"
         >
           <MoreIcon size={16} />
+          {hasUnignoredUpdate && <span className="dt-update-dot" aria-hidden="true" />}
         </button>
 
         {platform.isDesktop && (
           <button
             type="button"
             className="header-icon-btn danger"
-            onClick={() => void hideToTray()}
-            title="隐藏至系统托盘"
-            aria-label="隐藏至托盘"
+            onClick={handleHeaderClose}
+            title={device.closeToTray !== false ? '隐藏到系统托盘' : '退出 DeskTag'}
+            aria-label={device.closeToTray !== false ? '隐藏到系统托盘' : '退出 DeskTag'}
           >
             <CloseIcon size={16} />
           </button>
@@ -273,16 +304,58 @@ export const PanelHeader: React.FC = () => {
 
             <div className="menu-divider" />
 
+            {hasUnignoredUpdate && updateResult && (
+              <button
+                type="button"
+                className="menu-item-btn"
+                onClick={handleOpenSettingsAbout}
+                style={{ color: 'var(--accent-soft-text)', fontWeight: 600 }}
+              >
+                <span
+                  style={{
+                    width: 7,
+                    height: 7,
+                    borderRadius: '50%',
+                    background: 'var(--accent)',
+                    flexShrink: 0,
+                    marginLeft: 4,
+                    marginRight: 4,
+                  }}
+                />
+                <span>发现新版本 v{updateResult.latestVersion}</span>
+              </button>
+            )}
+
             <button
               type="button"
               className="menu-item-btn"
               onClick={() => {
-                closeAllPopovers();
-                setShowSettings(true, 'general');
+                if (hasUnignoredUpdate && onOpenSettingsAbout) {
+                  handleOpenSettingsAbout();
+                } else {
+                  closeAllPopovers();
+                  setShowSettings(true, 'general');
+                }
               }}
             >
               <SettingsIcon size={15} />
               <span>设置</span>
+              {hasUnignoredUpdate && (
+                <span
+                  style={{
+                    marginLeft: 'auto',
+                    fontSize: 10.5,
+                    fontWeight: 600,
+                    padding: '1px 6px',
+                    borderRadius: 999,
+                    background: 'var(--accent-soft)',
+                    color: 'var(--accent-soft-text)',
+                    border: '1px solid var(--accent-border)',
+                  }}
+                >
+                  有更新
+                </span>
+              )}
             </button>
 
             {platform.supportsEdgeDock && (
@@ -297,6 +370,20 @@ export const PanelHeader: React.FC = () => {
                 <RefreshIcon size={15} />
                 <span>恢复默认布局</span>
               </button>
+            )}
+
+            {platform.isDesktop && (
+              <>
+                <div className="menu-divider" />
+                <button
+                  type="button"
+                  className="menu-item-btn danger"
+                  onClick={() => void handleQuitApp()}
+                >
+                  <CloseIcon size={15} />
+                  <span>退出 DeskTag</span>
+                </button>
+              </>
             )}
           </div>
         </>

@@ -369,10 +369,8 @@ jobs:
           ls -lh
           cat SHA256SUMS.txt
 
-      - name: Create or update GitHub Release
+      - name: Prepare release notes and latest.json update manifest
         shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
@@ -396,8 +394,9 @@ jobs:
             - *提示 / Note*: 若首次打开未签名版本提示「已损坏」，请在终端执行 \`xattr -cr /Applications/DeskTag.app\`。
           - **Android**:
             - \`*_android_arm64.apk\` — Android ARM64 安装包（可直接安装体验）
-          - **校验文件 / Checksums**:
+          - **校验与更新清单 / Checksums & Update Manifest**:
             - \`SHA256SUMS.txt\` — 所有发行产物的 SHA-256 校验值
+            - \`latest.json\` — 客户端自动检查更新元数据清单
 
           ### 核心亮点 / Highlights
 
@@ -406,7 +405,93 @@ jobs:
           - 普通 / 时间轴双模式便签（折叠标题、大纲、表格、附件、\`@\` 双向关联、隐私锁）
           - 独立农历日历、四象限、标准/重复提醒与免打扰时段、11 款原创主题皮肤
           - 端到端加密 WebDAV 云同步（AES-256-GCM + PBKDF2-SHA256、三方逐项合并、同步预览/撤销、\`desktag-sync:...\` 一键配置）
+          - 内置轻量检查更新与启动静默检测（支持 Windows 绿色版原地热更新、NSIS/MSI 安装包、macOS DMG 与 Android APK）
           EOF
+
+          python3 - "$TAG" "$GITHUB_REPOSITORY" "$NOTES_FILE" <<'PY'
+          import datetime
+          import json
+          import os
+          import sys
+
+          tag, repo, notes_file = sys.argv[1], sys.argv[2], sys.argv[3]
+          version = tag.lstrip("vV")
+          artifacts_dir = "dist-artifacts"
+
+          checksums = {}
+          sums_path = os.path.join(artifacts_dir, "SHA256SUMS.txt")
+          if os.path.isfile(sums_path):
+              with open(sums_path, "r", encoding="utf-8") as fh:
+                  for line in fh:
+                      parts = line.strip().split()
+                      if len(parts) >= 2:
+                          digest = parts[0].lower()
+                          fname = parts[-1].lstrip("*")
+                          checksums[fname] = digest
+
+          with open(notes_file, "r", encoding="utf-8") as fh:
+              notes = fh.read().strip()
+
+          def classify_asset(name: str):
+              low = name.lower()
+              if low.endswith("-standalone.exe"):
+                  return "windows-x86_64-standalone"
+              if low.endswith("-setup.exe"):
+                  return "windows-x86_64-nsis"
+              if low.endswith(".msi"):
+                  return "windows-x86_64-msi"
+              if low.endswith("_aarch64.dmg") or low.endswith("_arm64.dmg"):
+                  return "macos-aarch64"
+              if low.endswith("_x64.dmg") or low.endswith("_x86_64.dmg"):
+                  return "macos-x86_64"
+              if low.endswith(".apk"):
+                  return "android-arm64"
+              return None
+
+          assets = {}
+          for fname in sorted(os.listdir(artifacts_dir)):
+              fpath = os.path.join(artifacts_dir, fname)
+              if not os.path.isfile(fpath) or fname in ("SHA256SUMS.txt", "latest.json"):
+                  continue
+              key = classify_asset(fname)
+              if not key:
+                  continue
+              entry = {
+                  "name": fname,
+                  "url": f"https://github.com/{repo}/releases/download/{tag}/{fname}",
+                  "size": os.path.getsize(fpath),
+              }
+              if fname in checksums:
+                  entry["sha256"] = checksums[fname]
+              assets[key] = entry
+
+          manifest = {
+              "version": version,
+              "tag": tag,
+              "name": f"DeskTag {tag}",
+              "pub_date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+              "notes": notes,
+              "release_url": f"https://github.com/{repo}/releases/tag/{tag}",
+              "assets": assets,
+          }
+
+          out_path = os.path.join(artifacts_dir, "latest.json")
+          with open(out_path, "w", encoding="utf-8") as fh:
+              json.dump(manifest, fh, ensure_ascii=False, indent=2)
+              fh.write("\n")
+
+          print("Generated latest.json:")
+          print(json.dumps(manifest, ensure_ascii=False, indent=2))
+          PY
+
+      - name: Create or update GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          NOTES_FILE="$RUNNER_TEMP/release-notes.md"
 
           PRERELEASE_FLAGS=()
           if [[ "$TAG" == *-* ]]; then

@@ -14,11 +14,13 @@ import type {
   DefaultView,
   DeviceSettings,
   DockMode,
+  InstallKind,
   StorageInfo,
   TabWidthMode,
   TodoPriority,
   TodoSortBy,
 } from '../types/models';
+import { formatRelativeTime } from '../utils/lunar';
 import { exportDeskTagDocument, type ClientExportFormat } from '../utils/exporter';
 import {
   ChevronDownIcon,
@@ -34,6 +36,8 @@ import { WebDavSyncCard } from './WebDavSyncCard';
 export interface SettingsModalProps {
   /** Render inline without backdrop overlay (used for Android's bottom Settings tab). */
   inline?: boolean;
+  /** Optional tab to activate when the settings modal opens (e.g. `'about'`). */
+  initialTab?: SettingsTabId | string;
 }
 
 const DOCK_MODE_OPTIONS: Array<{ value: DockMode; label: string }> = [
@@ -67,7 +71,70 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
-export const SettingsModal: React.FC<SettingsModalProps> = ({ inline = false }) => {
+function getFallbackAppVersion(): string {
+  return typeof __APP_VERSION__ === 'string' && __APP_VERSION__.trim()
+    ? __APP_VERSION__
+    : '1.1.0';
+}
+
+function formatInstallKindLabel(kind: InstallKind): string {
+  switch (kind) {
+    case 'windows_standalone':
+      return 'Windows 绿色版';
+    case 'windows_nsis':
+      return 'Windows NSIS 安装包';
+    case 'windows_msi':
+      return 'Windows MSI 安装包';
+    case 'macos_arm64':
+      return 'macOS (Apple Silicon)';
+    case 'macos_x64':
+      return 'macOS (Intel)';
+    case 'android_arm64':
+      return 'Android APK';
+    default:
+      return 'GitHub Release';
+  }
+}
+
+function getInstallButtonLabel(kind: InstallKind, hasAsset: boolean): string {
+  if (!hasAsset) return '前往发布页';
+  switch (kind) {
+    case 'windows_standalone':
+      return '下载并自动更新';
+    case 'windows_nsis':
+    case 'windows_msi':
+      return '下载并启动安装';
+    case 'macos_arm64':
+    case 'macos_x64':
+      return '下载安装包 (.dmg)';
+    case 'android_arm64':
+      return '下载新版本 (.apk)';
+    default:
+      return '前往发布页';
+  }
+}
+
+function formatReleaseDate(iso: string | null): string | null {
+  if (!iso) return null;
+  const ts = Date.parse(iso);
+  if (Number.isNaN(ts)) return iso.slice(0, 10);
+  const d = new Date(ts);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+const VALID_SETTINGS_TABS: ReadonlySet<SettingsTabId> = new Set<SettingsTabId>([
+  'general',
+  'panel',
+  'personalize',
+  'shortcuts',
+  'data',
+  'about',
+]);
+
+export const SettingsModal: React.FC<SettingsModalProps> = ({ inline = false, initialTab }) => {
   const {
     data,
     device,
@@ -76,6 +143,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ inline = false }) 
     showSettings,
     settingsTab,
     webdavStatus,
+    updateResult,
+    updateChecking,
+    updateError,
+    updateInstalling,
+    updateProgress,
+    hasUnignoredUpdate,
     setShowSettings,
     setSettingsTab,
     updateSyncedSettings,
@@ -85,6 +158,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ inline = false }) 
     replaceAppData,
     applySyncedAppData,
     setWebdavStatusState,
+    checkForUpdates,
+    installAvailableUpdate,
+    skipUpdateVersion,
     showToast,
   } = useDeskTagStore();
 
@@ -140,6 +216,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ inline = false }) 
       // ignore
     }
   }, []);
+
+  useEffect(() => {
+    if ((inline || showSettings) && initialTab && VALID_SETTINGS_TABS.has(initialTab as SettingsTabId)) {
+      setSettingsTab(initialTab as SettingsTabId);
+    }
+  }, [inline, showSettings, initialTab, setSettingsTab]);
 
   useEffect(() => {
     if ((inline || showSettings) && activeTab === 'data') {
@@ -403,12 +485,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ inline = false }) 
         >
           {tabs.map((tab) => {
             const active = activeTab === tab.id;
+            const showDot = tab.id === 'about' && hasUnignoredUpdate;
             return (
               <button
                 key={tab.id}
                 type="button"
                 onClick={() => setSettingsTab(tab.id)}
                 style={{
+                  position: 'relative',
                   textAlign: isMobileLayout ? 'center' : 'left',
                   padding: isMobileLayout ? '6px 12px' : '8px 12px',
                   borderRadius: 9,
@@ -422,6 +506,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ inline = false }) 
                 }}
               >
                 {tab.label}
+                {showDot && <span className="dt-update-dot" aria-label="有可用更新" />}
               </button>
             );
           })}
@@ -1248,76 +1333,397 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ inline = false }) 
           {/* =============================================================== */}
           {/* TAB 6: 关于 (About)                                             */}
           {/* =============================================================== */}
-          {activeTab === 'about' && (
-            <>
-              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>关于</h3>
+          {activeTab === 'about' && (() => {
+            const appVersion = platform.appVersion || getFallbackAppVersion();
+            const isVersionSkipped = Boolean(
+              updateResult?.hasUpdate &&
+                device.skippedUpdateVersion &&
+                device.skippedUpdateVersion === updateResult.latestVersion,
+            );
+            const statusPill = updateChecking
+              ? { label: '检查中', bg: 'var(--bg-surface)', color: 'var(--text-secondary)', border: 'var(--border)' }
+              : updateError
+                ? { label: '检查失败', bg: 'var(--danger-soft)', color: 'var(--danger)', border: 'rgba(217, 77, 74, 0.35)' }
+                : updateResult?.hasUpdate
+                  ? { label: '有新版本', bg: 'var(--accent-soft)', color: 'var(--accent-soft-text)', border: 'var(--accent-border)' }
+                  : updateResult
+                    ? { label: '已是最新', bg: 'rgba(91, 140, 90, 0.14)', color: 'var(--success)', border: 'rgba(91, 140, 90, 0.35)' }
+                    : null;
+            const releaseDate = formatReleaseDate(updateResult?.publishedAt ?? null);
+            const showProgress =
+              updateInstalling || Boolean(updateProgress && updateProgress.stage !== 'error');
 
-              <div className="dt-settings-card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <MascotAvatar size={44} />
-                  <div>
-                    <div style={{ fontSize: 17, fontWeight: 700 }}>DeskTag</div>
-                    <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>
-                      版本 v{platform.appVersion || '1.0.1'} · 独立开源跨平台桌面贴边待办与便签
+            return (
+              <>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>关于</h3>
+
+                {/* Card 1: Software Identity */}
+                <div className="dt-settings-card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <MascotAvatar size={44} />
+                    <div>
+                      <div style={{ fontSize: 17, fontWeight: 700 }}>DeskTag</div>
+                      <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>
+                        版本 v{appVersion} · 独立开源跨平台桌面贴边待办与便签
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      fontSize: 13,
+                      lineHeight: 1.7,
+                      color: 'var(--text-secondary)',
+                      padding: '10px 12px',
+                      borderRadius: 10,
+                      background: 'var(--bg-surface)',
+                      border: '1px solid var(--border)',
+                    }}
+                  >
+                    DeskTag 是一款独立开源的轻量跨平台桌面贴边待办与便签工具，让日常任务与灵感记录随手可得、专注时安静收拢。
+                    <br />
+                    坚持本地优先与数据自主，支持通过 AES-256-GCM 端到端加密 WebDAV 引擎在 Windows、macOS 与 Android 间自由同步。
+                  </div>
+
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {[
+                      'Rust + Tauri v2',
+                      'React 19 + TypeScript',
+                      'AES-256-GCM E2EE WebDAV',
+                      '11 款原创主题',
+                      'Windows · macOS · Android',
+                    ].map((badge) => (
+                      <span
+                        key={badge}
+                        style={{
+                          fontSize: 11.5,
+                          padding: '3px 9px',
+                          borderRadius: 999,
+                          background: 'var(--tag-bg)',
+                          border: '1px solid var(--tag-border)',
+                          color: 'var(--tag-text)',
+                        }}
+                      >
+                        {badge}
+                      </span>
+                    ))}
+                  </div>
+
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: 8,
+                      paddingTop: 4,
+                    }}
+                  >
+                    <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>
+                      项目源码与问题反馈
+                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        className="dt-btn dt-btn-ghost dt-btn-xs"
+                        onClick={() =>
+                          void handleOpenExternalUrl('https://github.com/nonsense-j/DeskTag/releases')
+                        }
+                      >
+                        发布日志 ↗
+                      </button>
+                      <button
+                        type="button"
+                        className="dt-btn dt-btn-soft"
+                        onClick={() => void handleOpenExternalUrl('https://github.com/nonsense-j/DeskTag')}
+                      >
+                        GitHub: nonsense-j/DeskTag ↗
+                      </button>
                     </div>
                   </div>
                 </div>
 
-                <div
-                  style={{
-                    fontSize: 13,
-                    lineHeight: 1.7,
-                    color: 'var(--text-secondary)',
-                    padding: '10px 12px',
-                    borderRadius: 10,
-                    background: 'var(--bg-surface)',
-                    border: '1px solid var(--border)',
-                  }}
-                >
-                  DeskTag 是一款独立开源的轻量跨平台桌面贴边待办与便签工具，让日常任务与灵感记录随手可得、专注时安静收拢。
-                  <br />
-                  坚持本地优先与数据自主，支持通过 AES-256-GCM 端到端加密 WebDAV 引擎在 Windows、macOS 与 Android 间自由同步。
-                </div>
+                {/* Card 2: Software Updates */}
+                <div className="dt-settings-card" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div className="dt-setting-row">
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <span className="dt-settings-card-title">软件更新</span>
+                        {statusPill && (
+                          <span
+                            style={{
+                              fontSize: 11,
+                              fontWeight: 600,
+                              padding: '1px 8px',
+                              borderRadius: 999,
+                              background: statusPill.bg,
+                              color: statusPill.color,
+                              border: `1px solid ${statusPill.border}`,
+                            }}
+                          >
+                            {statusPill.label}
+                          </span>
+                        )}
+                      </div>
+                      <div className="dt-setting-desc">
+                        当前版本 v{appVersion}
+                        {device.lastUpdateCheckAt
+                          ? ` · 上次检查：${formatRelativeTime(device.lastUpdateCheckAt)}`
+                          : ''}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="dt-btn dt-btn-soft"
+                      disabled={updateChecking || updateInstalling}
+                      onClick={() => void checkForUpdates({ force: true, silent: false })}
+                    >
+                      {updateChecking ? '检查中…' : updateResult ? '重新检查' : '检查更新'}
+                    </button>
+                  </div>
 
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {[
-                    'Rust + Tauri v2',
-                    'React 19 + TypeScript',
-                    'AES-256-GCM E2EE WebDAV',
-                    '11 款原创主题',
-                    'Windows · macOS · Android',
-                  ].map((badge) => (
-                    <span
-                      key={badge}
+                  {/* Error State */}
+                  {updateError && !updateChecking && (
+                    <div className="dt-webdav-banner is-error">
+                      <div className="dt-webdav-banner-body">{updateError}</div>
+                      <div className="dt-webdav-banner-actions">
+                        <button
+                          type="button"
+                          className="dt-btn dt-btn-ghost dt-btn-xs"
+                          onClick={() => void checkForUpdates({ force: true, silent: false })}
+                        >
+                          重试
+                        </button>
+                        <button
+                          type="button"
+                          className="dt-btn dt-btn-ghost dt-btn-xs"
+                          onClick={() =>
+                            void handleOpenExternalUrl('https://github.com/nonsense-j/DeskTag/releases')
+                          }
+                        >
+                          前往发布页 ↗
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Up-to-date State */}
+                  {updateResult && !updateResult.hasUpdate && !updateError && !updateChecking && (
+                    <div className="dt-webdav-banner is-success">
+                      <div className="dt-webdav-banner-body">
+                        {updateResult.latestVersion === appVersion
+                          ? `当前已是最新版本（v${appVersion}）。`
+                          : `当前已是最新版本（当前 v${appVersion}，GitHub 最新 v${updateResult.latestVersion}）。`}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* New Version Available Panel */}
+                  {updateResult?.hasUpdate && (
+                    <div
                       style={{
-                        fontSize: 11.5,
-                        padding: '3px 9px',
-                        borderRadius: 999,
-                        background: 'var(--tag-bg)',
-                        border: '1px solid var(--tag-border)',
-                        color: 'var(--tag-text)',
+                        padding: '12px 13px',
+                        borderRadius: 10,
+                        background: 'var(--bg-surface)',
+                        border: '1px solid var(--accent-border)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 10,
                       }}
                     >
-                      {badge}
-                    </span>
-                  ))}
-                </div>
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: 8,
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-primary)' }}>
+                            {updateResult.releaseName || `DeskTag v${updateResult.latestVersion}`}
+                          </span>
+                          <span
+                            style={{
+                              fontSize: 11,
+                              padding: '1px 7px',
+                              borderRadius: 999,
+                              background: 'var(--accent-soft)',
+                              color: 'var(--accent-soft-text)',
+                              border: '1px solid var(--accent-border)',
+                              fontWeight: 600,
+                            }}
+                          >
+                            {formatInstallKindLabel(updateResult.installKind)}
+                          </span>
+                          {isVersionSkipped && (
+                            <span
+                              style={{
+                                fontSize: 11,
+                                padding: '1px 7px',
+                                borderRadius: 999,
+                                background: 'var(--tag-bg)',
+                                color: 'var(--text-muted)',
+                              }}
+                            >
+                              已跳过
+                            </span>
+                          )}
+                        </div>
+                        <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                          {[
+                            releaseDate,
+                            updateResult.recommendedAsset?.size
+                              ? formatBytes(updateResult.recommendedAsset.size)
+                              : null,
+                          ]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </span>
+                      </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 4 }}>
-                  <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>
-                    项目源码与问题反馈
-                  </span>
-                  <button
-                    type="button"
-                    className="dt-btn dt-btn-soft"
-                    onClick={() => void handleOpenExternalUrl('https://github.com/nonsense-j/DeskTag')}
-                  >
-                    GitHub: nonsense-j/DeskTag ↗
-                  </button>
+                      {updateResult.releaseNotes.trim() && (
+                        <div
+                          style={{
+                            maxHeight: 160,
+                            overflowY: 'auto',
+                            padding: '8px 10px',
+                            borderRadius: 8,
+                            background: 'var(--bg-header)',
+                            border: '1px solid var(--border)',
+                            fontSize: 12,
+                            lineHeight: 1.6,
+                            color: 'var(--text-secondary)',
+                            whiteSpace: 'pre-wrap',
+                            wordBreak: 'break-word',
+                            userSelect: 'text',
+                          }}
+                        >
+                          {updateResult.releaseNotes.trim()}
+                        </div>
+                      )}
+
+                      {showProgress && updateProgress && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                          <div
+                            style={{
+                              height: 6,
+                              borderRadius: 999,
+                              background: 'var(--border)',
+                              overflow: 'hidden',
+                            }}
+                          >
+                            <div
+                              style={{
+                                height: '100%',
+                                width: `${updateProgress.percent ?? 100}%`,
+                                background: 'var(--accent)',
+                                borderRadius: 999,
+                                transition: 'width 0.16s ease',
+                              }}
+                            />
+                          </div>
+                          <div
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              gap: 8,
+                              fontSize: 11.5,
+                              color: 'var(--text-muted)',
+                            }}
+                          >
+                            <span>
+                              {updateProgress.message ||
+                                (updateProgress.stage === 'downloading'
+                                  ? `正在下载${updateResult.recommendedAsset ? ` ${updateResult.recommendedAsset.name}` : ''}…`
+                                  : updateProgress.stage === 'verifying'
+                                    ? '正在校验 SHA-256…'
+                                    : updateProgress.stage === 'installing'
+                                      ? '正在准备更新…'
+                                      : '更新已就绪')}
+                            </span>
+                            {updateProgress.totalBytes ? (
+                              <span style={{ whiteSpace: 'nowrap' }}>
+                                {formatBytes(updateProgress.downloadedBytes)} /{' '}
+                                {formatBytes(updateProgress.totalBytes)}
+                                {updateProgress.percent !== null ? ` · ${updateProgress.percent}%` : ''}
+                              </span>
+                            ) : updateProgress.downloadedBytes > 0 ? (
+                              <span style={{ whiteSpace: 'nowrap' }}>
+                                {formatBytes(updateProgress.downloadedBytes)}
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                      )}
+
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        <button
+                          type="button"
+                          className="dt-btn dt-btn-primary"
+                          disabled={updateInstalling || updateChecking}
+                          onClick={() => void installAvailableUpdate()}
+                        >
+                          {updateInstalling
+                            ? '正在处理…'
+                            : getInstallButtonLabel(
+                                updateResult.installKind,
+                                Boolean(updateResult.recommendedAsset),
+                              )}
+                        </button>
+                        <button
+                          type="button"
+                          className="dt-btn dt-btn-ghost"
+                          onClick={() => void handleOpenExternalUrl(updateResult.releaseUrl)}
+                        >
+                          前往发布页 ↗
+                        </button>
+                        <button
+                          type="button"
+                          className="dt-link-btn"
+                          style={{ marginLeft: 'auto' }}
+                          disabled={updateInstalling}
+                          onClick={() =>
+                            void skipUpdateVersion(
+                              isVersionSkipped ? null : updateResult.latestVersion,
+                            )
+                          }
+                        >
+                          {isVersionSkipped ? '取消跳过此版本' : '跳过此版本'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="dt-setting-divider" style={{ margin: '2px 0' }} />
+
+                  <label className="dt-setting-row" style={{ cursor: 'pointer' }}>
+                    <div>
+                      <div className="dt-setting-title">启动时自动检查更新</div>
+                      <div className="dt-setting-desc">
+                        应用启动后在后台静默检查 GitHub 新版本，仅发现更新时轻提示
+                      </div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={device.autoCheckUpdates !== false}
+                      onChange={(e) =>
+                        void updateDeviceSettings({ autoCheckUpdates: e.target.checked })
+                      }
+                    />
+                  </label>
                 </div>
-              </div>
-            </>
-          )}
+              </>
+            );
+          })()}
         </div>
       </div>
     </div>

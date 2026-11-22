@@ -139,12 +139,19 @@ const NAV_ITEMS: Array<{
 ];
 
 export const MobileBottomNav: React.FC = () => {
-  const { mobileSection, setMobileSection, setShowQuadrant, closeAllPopovers } = useDeskTagStore();
+  const {
+    mobileSection,
+    hasUnignoredUpdate,
+    setMobileSection,
+    setShowQuadrant,
+    closeAllPopovers,
+  } = useDeskTagStore();
 
   return (
     <nav className="mobile-bottom-nav" aria-label="移动端底部导航">
       {NAV_ITEMS.map((item) => {
         const active = mobileSection === item.id;
+        const showUpdateDot = item.id === 'settings' && hasUnignoredUpdate;
         return (
           <button
             key={item.id}
@@ -156,7 +163,16 @@ export const MobileBottomNav: React.FC = () => {
               setMobileSection(item.id);
             }}
           >
-            {item.renderIcon()}
+            <span style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+              {item.renderIcon()}
+              {showUpdateDot && (
+                <span
+                  className="dt-update-dot"
+                  style={{ top: -2, right: -4 }}
+                  aria-label="有可用更新"
+                />
+              )}
+            </span>
             <span>{item.label}</span>
           </button>
         );

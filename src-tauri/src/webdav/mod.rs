@@ -117,6 +117,11 @@ impl WebDavManager {
         }
     }
 
+    /// Wake the background sync loop after external WebDAV config or storage-dir changes.
+    pub fn notify_config_changed(&self) {
+        self.config_notify.notify_one();
+    }
+
     /// Spawn background auto-sync loop:
     /// - 20s startup sync delay
     /// - 5s debounced push on local changes (`trigger_debounced_sync`)
@@ -160,6 +165,25 @@ impl WebDavManager {
                         () = mgr.config_notify.notified() => {
                             let cfg = mgr.storage.load_webdav_config();
                             mgr.update_next_auto_sync_at(&cfg, last_tried, rate_limited, backoff_gap).await;
+                        }
+                    }
+                    continue;
+                }
+
+                let cfg = mgr.storage.load_webdav_config();
+                if !cfg.enabled || !cfg.is_configured() || cfg.auto_sync_minutes <= 0 {
+                    mgr.update_next_auto_sync_at(&cfg, last_tried, false, Duration::ZERO)
+                        .await;
+                    // Park indefinitely until config or debounced-sync notification arrives (0 periodic wakeups).
+                    tokio::select! {
+                        () = mgr.debounce_notify.notified() => {
+                            mgr.run_debounced_window(&mut last_tried, &mut rate_limited, &mut backoff_gap).await;
+                        }
+                        () = mgr.config_notify.notified() => {
+                            rate_limited = false;
+                            backoff_gap = Duration::ZERO;
+                            let next_cfg = mgr.storage.load_webdav_config();
+                            mgr.update_next_auto_sync_at(&next_cfg, last_tried, rate_limited, backoff_gap).await;
                         }
                     }
                     continue;

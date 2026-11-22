@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::io::{Cursor, Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, RwLock};
 
 use base64::Engine;
@@ -106,10 +107,23 @@ fn ensure_private_dir(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
+fn compute_has_active_reminders(data: &AppData) -> bool {
+    data.todos.iter().any(|t| {
+        t.deleted_at.is_none()
+            && !t.completed
+            && t.reminder_rule.as_ref().map(|r| r.enabled).unwrap_or(false)
+    })
+}
+
 pub struct StorageManager {
     default_dir: PathBuf,
     active_dir: RwLock<PathBuf>,
     io_lock: Mutex<()>,
+    app_data_cache: RwLock<Option<AppData>>,
+    device_cache: RwLock<Option<DeviceSettings>>,
+    webdav_cache: RwLock<Option<WebDavConfig>>,
+    has_active_reminders: AtomicBool,
+    reminders_initialized: AtomicBool,
 }
 
 impl StorageManager {
@@ -135,7 +149,36 @@ impl StorageManager {
             default_dir,
             active_dir: RwLock::new(initial_dir),
             io_lock: Mutex::new(()),
+            app_data_cache: RwLock::new(None),
+            device_cache: RwLock::new(Some(pointer_device)),
+            webdav_cache: RwLock::new(None),
+            has_active_reminders: AtomicBool::new(false),
+            reminders_initialized: AtomicBool::new(false),
         }
+    }
+
+    /// Clear all in-memory caches (called on storage directory switch or external reset).
+    pub fn invalidate_caches(&self) {
+        if let Ok(mut g) = self.app_data_cache.write() {
+            *g = None;
+        }
+        if let Ok(mut g) = self.device_cache.write() {
+            *g = None;
+        }
+        if let Ok(mut g) = self.webdav_cache.write() {
+            *g = None;
+        }
+        self.has_active_reminders.store(false, Ordering::Release);
+        self.reminders_initialized.store(false, Ordering::Release);
+    }
+
+    /// O(1) check whether any non-deleted, incomplete todo has an enabled reminder rule.
+    /// Avoids cloning or reading `AppData` on every reminder daemon tick when no reminders exist.
+    pub fn has_active_reminders(&self) -> bool {
+        if !self.reminders_initialized.load(Ordering::Acquire) {
+            let _ = self.load_app_data();
+        }
+        self.has_active_reminders.load(Ordering::Acquire)
     }
 
     pub fn active_dir(&self) -> PathBuf {
@@ -184,38 +227,85 @@ impl StorageManager {
     }
 
     pub fn load_app_data(&self) -> AppData {
+        if let Ok(guard) = self.app_data_cache.read() {
+            if let Some(ref cached) = *guard {
+                return cached.clone();
+            }
+        }
         let path = self.data_file_path();
-        fs::read_to_string(&path)
+        let data = fs::read_to_string(&path)
             .ok()
             .and_then(|raw| serde_json::from_str::<AppData>(strip_utf8_bom(&raw)).ok())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        self.has_active_reminders
+            .store(compute_has_active_reminders(&data), Ordering::Release);
+        self.reminders_initialized.store(true, Ordering::Release);
+        if let Ok(mut guard) = self.app_data_cache.write() {
+            *guard = Some(data.clone());
+        }
+        data
     }
 
-    pub fn save_app_data(&self, mut data: AppData) -> Result<(), String> {
+    /// Persist `AppData` atomically, refresh the in-memory cache, and return the stamped copy
+    /// without re-reading or re-parsing `data.json` from disk.
+    pub fn save_app_data_and_return(&self, mut data: AppData) -> Result<AppData, String> {
         let _guard = self.io_lock.lock().unwrap_or_else(|e| e.into_inner());
         data.updated_at = now_iso();
         let bytes = serde_json::to_vec_pretty(&data)
             .map_err(|e| format!("failed to serialize app data: {e}"))?;
-        write_atomic(&self.data_file_path(), &bytes)
+        write_atomic(&self.data_file_path(), &bytes)?;
+        self.has_active_reminders
+            .store(compute_has_active_reminders(&data), Ordering::Release);
+        self.reminders_initialized.store(true, Ordering::Release);
+        if let Ok(mut cache) = self.app_data_cache.write() {
+            *cache = Some(data.clone());
+        }
+        Ok(data)
+    }
+
+    pub fn save_app_data(&self, data: AppData) -> Result<(), String> {
+        self.save_app_data_and_return(data).map(|_| ())
     }
 
     pub fn load_device_settings(&self) -> DeviceSettings {
-        Self::read_device_from(&self.default_dir)
+        if let Ok(guard) = self.device_cache.read() {
+            if let Some(ref cached) = *guard {
+                return cached.clone();
+            }
+        }
+        let device = Self::read_device_from(&self.default_dir);
+        if let Ok(mut guard) = self.device_cache.write() {
+            *guard = Some(device.clone());
+        }
+        device
     }
 
     pub fn save_device_settings(&self, device: &DeviceSettings) -> Result<(), String> {
         let _guard = self.io_lock.lock().unwrap_or_else(|e| e.into_inner());
         let bytes = serde_json::to_vec_pretty(device)
             .map_err(|e| format!("failed to serialize device settings: {e}"))?;
-        write_atomic(&self.device_file_path(), &bytes)
+        write_atomic(&self.device_file_path(), &bytes)?;
+        if let Ok(mut cache) = self.device_cache.write() {
+            *cache = Some(device.clone());
+        }
+        Ok(())
     }
 
     pub fn load_webdav_config(&self) -> WebDavConfig {
+        if let Ok(guard) = self.webdav_cache.read() {
+            if let Some(ref cached) = *guard {
+                return cached.clone();
+            }
+        }
         let path = self.sync_config_path();
-        fs::read_to_string(&path)
+        let cfg = fs::read_to_string(&path)
             .ok()
             .and_then(|raw| serde_json::from_str::<WebDavConfig>(strip_utf8_bom(&raw)).ok())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        if let Ok(mut guard) = self.webdav_cache.write() {
+            *guard = Some(cfg.clone());
+        }
+        cfg
     }
 
     pub fn save_webdav_config(&self, cfg: &WebDavConfig) -> Result<(), String> {
@@ -223,7 +313,11 @@ impl StorageManager {
         let _ = ensure_private_dir(&self.active_dir().join(SYNC_BACKUP_DIR_NAME));
         let bytes = serde_json::to_vec_pretty(cfg)
             .map_err(|e| format!("failed to serialize webdav config: {e}"))?;
-        write_atomic_private(&self.sync_config_path(), &bytes)
+        write_atomic_private(&self.sync_config_path(), &bytes)?;
+        if let Ok(mut cache) = self.webdav_cache.write() {
+            *cache = Some(cfg.clone());
+        }
+        Ok(())
     }
 
     pub fn load_notifications(&self) -> Vec<NotificationItem> {
@@ -413,6 +507,12 @@ impl StorageManager {
 
         if let Ok(mut guard) = self.active_dir.write() {
             *guard = target;
+        }
+        // Invalidate active-dir caches so subsequent reads reflect the new storage dir,
+        // while keeping the newly persisted device settings cached.
+        self.invalidate_caches();
+        if let Ok(mut cache) = self.device_cache.write() {
+            *cache = Some(device);
         }
         Ok(self.get_storage_info())
     }
@@ -2280,6 +2380,52 @@ mod tests {
             .unwrap();
         let imported = mgr.import_backup(Some(bk.path)).unwrap();
         assert_eq!(imported.device.as_ref().map(|d| d.panel_width), Some(520));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_memory_cache_and_active_reminders_flag() {
+        let dir = temp_test_dir("cache_reminders");
+        let mgr = StorageManager::new(dir.clone());
+        assert!(!mgr.has_active_reminders());
+
+        let mut data = AppData::default();
+        data.todos.push(TodoItem {
+            id: "rem1".into(),
+            title: "提醒测试".into(),
+            notes: String::new(),
+            note_images: vec![],
+            completed: false,
+            completed_at: None,
+            priority: TodoPriority::None,
+            due_date: None,
+            due_time: None,
+            end_date: None,
+            list_id: None,
+            tags: vec![],
+            subtasks: vec![],
+            repeat_rule: None,
+            reminder_rule: Some(crate::models::ReminderRule {
+                enabled: true,
+                ..Default::default()
+            }),
+            quadrant_override: None,
+            links: vec![],
+            sort_order: 0.0,
+            created_at: now_iso(),
+            updated_at: now_iso(),
+            deleted_at: None,
+        });
+        let saved = mgr.save_app_data_and_return(data).unwrap();
+        assert_eq!(saved.todos.len(), 1);
+        assert!(mgr.has_active_reminders());
+
+        // Completing the todo flips the cached active-reminders flag back to false.
+        let mut updated = mgr.load_app_data();
+        updated.todos[0].completed = true;
+        mgr.save_app_data(updated).unwrap();
+        assert!(!mgr.has_active_reminders());
 
         let _ = fs::remove_dir_all(&dir);
     }

@@ -11,12 +11,16 @@ import {
   type ExportDocumentRequest,
   type ExportDocumentResult,
   type ImportBackupResult,
+  type InstallKind,
   type NotificationItem,
   type PlatformInfo,
   type SaveAttachmentInput,
   type StorageInfo,
   type SyncExecutionResult,
   type SyncPreview,
+  type UpdateAsset,
+  type UpdateCheckResult,
+  type UpdateInstallResult,
   type WebDavConfigInput,
   type WebDavConfigView,
   type WebDavStatusView,
@@ -77,6 +81,12 @@ function writeJson<T>(key: string, value: T): void {
   }
 }
 
+function getFallbackAppVersion(): string {
+  return typeof __APP_VERSION__ === 'string' && __APP_VERSION__.trim()
+    ? __APP_VERSION__
+    : '1.1.0';
+}
+
 function detectBrowserPlatform(): PlatformInfo {
   const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
   const isAndroid = /Android/i.test(ua);
@@ -88,7 +98,7 @@ function detectBrowserPlatform(): PlatformInfo {
     platform,
     isDesktop: !isMobile,
     isMobile,
-    appVersion: '1.0.1',
+    appVersion: getFallbackAppVersion(),
     supportsEdgeDock: !isMobile,
     supportsGlobalShortcut: !isMobile,
     supportsTray: !isMobile,
@@ -261,6 +271,12 @@ export async function hideToTray(): Promise<void> {
     return invoke<void>('hide_to_tray');
   }
   memoryFallback.dockCollapsed = true;
+}
+
+export async function quitApp(): Promise<void> {
+  if (isTauriRuntime()) {
+    return invoke<void>('quit_app');
+  }
 }
 
 export async function resetPanelLayout(): Promise<DeviceSettings> {
@@ -676,6 +692,126 @@ export async function triggerDebouncedSync(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// App Updates (GitHub Releases)
+// ---------------------------------------------------------------------------
+
+function normalizeVersionTag(raw: string): string {
+  return raw.trim().replace(/^[vV]+/, '').trim();
+}
+
+function compareSemVerFallback(current: string, candidate: string): boolean {
+  const parse = (v: string) => {
+    const clean = normalizeVersionTag(v).split('+')[0] ?? '';
+    const [core, pre] = clean.split('-', 2);
+    const nums = (core ?? '').split('.').map((n) => Number.parseInt(n, 10));
+    if (nums.length < 2 || nums.some((n) => Number.isNaN(n))) return null;
+    return { major: nums[0] ?? 0, minor: nums[1] ?? 0, patch: nums[2] ?? 0, pre: pre ?? '' };
+  };
+  const a = parse(current);
+  const b = parse(candidate);
+  if (!a || !b) return false;
+  if (b.major !== a.major) return b.major > a.major;
+  if (b.minor !== a.minor) return b.minor > a.minor;
+  if (b.patch !== a.patch) return b.patch > a.patch;
+  if (!a.pre && !b.pre) return false;
+  if (!b.pre && a.pre) return true;
+  if (b.pre && !a.pre) return false;
+  return b.pre > a.pre;
+}
+
+function detectBrowserInstallKind(): InstallKind {
+  const plat = detectBrowserPlatform().platform;
+  if (plat === 'windows') return 'windows_standalone';
+  if (plat === 'macos') return 'macos_arm64';
+  if (plat === 'android') return 'android_arm64';
+  return 'linux';
+}
+
+export async function checkForUpdate(force?: boolean): Promise<UpdateCheckResult> {
+  if (isTauriRuntime()) {
+    return invoke<UpdateCheckResult>('check_for_update', {
+      force: force ?? false,
+    });
+  }
+
+  const currentVersion = getFallbackAppVersion();
+  const installKind = detectBrowserInstallKind();
+  const resp = await fetch('https://api.github.com/repos/nonsense-j/DeskTag/releases/latest', {
+    headers: { Accept: 'application/vnd.github+json' },
+  });
+  if (!resp.ok) {
+    throw new Error(`检查更新失败：GitHub 返回 HTTP ${resp.status}`);
+  }
+  const payload = (await resp.json()) as {
+    tag_name?: string;
+    name?: string;
+    body?: string;
+    published_at?: string;
+    html_url?: string;
+    assets?: Array<{ name?: string; browser_download_url?: string; size?: number }>;
+  };
+  const tagName = payload.tag_name ?? `v${currentVersion}`;
+  const latestVersion = normalizeVersionTag(tagName);
+  const hasUpdate = compareSemVerFallback(currentVersion, latestVersion);
+  const dev = readJson(STORAGE_KEY_DEVICE, createDefaultDeviceSettings);
+  const skipped =
+    hasUpdate &&
+    !force &&
+    Boolean(dev.skippedUpdateVersion) &&
+    normalizeVersionTag(dev.skippedUpdateVersion ?? '') === latestVersion;
+  const checkedAt = new Date().toISOString();
+  writeJson(STORAGE_KEY_DEVICE, { ...dev, lastUpdateCheckAt: checkedAt });
+
+  const assets = payload.assets ?? [];
+  const matched = assets.find((a) => {
+    const low = (a.name ?? '').toLowerCase();
+    if (installKind === 'windows_standalone') return low.endsWith('-standalone.exe');
+    if (installKind === 'macos_arm64') return low.endsWith('_aarch64.dmg');
+    if (installKind === 'android_arm64') return low.endsWith('.apk');
+    return false;
+  });
+  const recommendedAsset: UpdateAsset | null =
+    matched?.name && matched.browser_download_url
+      ? {
+          name: matched.name,
+          url: matched.browser_download_url,
+          size: typeof matched.size === 'number' ? matched.size : null,
+          sha256: null,
+        }
+      : null;
+
+  return {
+    currentVersion,
+    latestVersion,
+    hasUpdate,
+    skipped,
+    releaseName: payload.name || `DeskTag ${tagName}`,
+    releaseNotes: payload.body ?? '',
+    publishedAt: payload.published_at ?? null,
+    releaseUrl: payload.html_url || 'https://github.com/nonsense-j/DeskTag/releases',
+    installKind,
+    recommendedAsset,
+    checkedAt,
+    source: 'github_api',
+  };
+}
+
+export async function downloadAndInstallUpdate(
+  update: UpdateCheckResult,
+): Promise<UpdateInstallResult> {
+  if (isTauriRuntime()) {
+    return invoke<UpdateInstallResult>('download_and_install_update', { update });
+  }
+  const targetUrl = update.recommendedAsset?.url || update.releaseUrl;
+  window.open(targetUrl, '_blank', 'noopener,noreferrer');
+  return {
+    action: 'opened_url',
+    path: null,
+    message: '已在浏览器中打开新版本下载链接',
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Platform Info
 // ---------------------------------------------------------------------------
 
@@ -698,6 +834,7 @@ export const tauriApi = {
   expandPanel,
   collapsePanel,
   hideToTray,
+  quitApp,
   resetPanelLayout,
   openCalendarWindow,
   openNoteWindow,
@@ -727,5 +864,7 @@ export const tauriApi = {
   webdavExportSetupText,
   webdavImportSetupText,
   triggerDebouncedSync,
+  checkForUpdate,
+  downloadAndInstallUpdate,
   getPlatformInfo,
 } as const;

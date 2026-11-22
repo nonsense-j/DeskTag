@@ -1,3 +1,5 @@
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 use std::sync::atomic::AtomicU64;
@@ -10,6 +12,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Emitter};
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+use tokio::sync::Notify;
 
 use crate::models::{DeviceSettings, DockMode, DockState, TabWidthMode};
 pub use crate::platform_win::WorkAreaRect;
@@ -183,6 +187,24 @@ pub fn cursor_at_dock_edge(
     }
 }
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+const BLUR_LOW_MEMORY_DELAY: Duration = Duration::from_secs(30);
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+struct WindowCreateGuard<'a> {
+    set: &'a Mutex<HashSet<String>>,
+    label: String,
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+impl Drop for WindowCreateGuard<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut guard) = self.set.lock() {
+            guard.remove(&self.label);
+        }
+    }
+}
+
 pub struct DockController {
     state: RwLock<DockState>,
     device_cache: RwLock<DeviceSettings>,
@@ -196,6 +218,14 @@ pub struct DockController {
     hidden_to_tray: AtomicBool,
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     geometry_gen: AtomicU64,
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    creating_windows: Mutex<HashSet<String>>,
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    hide_trim_gen: Arc<AtomicU64>,
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    blur_low_gen: Arc<AtomicU64>,
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    watcher_notify: Arc<Notify>,
 }
 
 impl DockController {
@@ -213,7 +243,42 @@ impl DockController {
             hidden_to_tray: AtomicBool::new(false),
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             geometry_gen: AtomicU64::new(0),
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            creating_windows: Mutex::new(HashSet::new()),
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            hide_trim_gen: Arc::new(AtomicU64::new(0)),
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            blur_low_gen: Arc::new(AtomicU64::new(0)),
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            watcher_notify: Arc::new(Notify::new()),
         }
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    fn bump_hide_trim_gen(&self) -> u64 {
+        self.hide_trim_gen.fetch_add(1, Ordering::SeqCst) + 1
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    fn bump_blur_low_gen(&self) -> u64 {
+        self.blur_low_gen.fetch_add(1, Ordering::SeqCst) + 1
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    fn notify_watcher(&self) {
+        self.watcher_notify.notify_one();
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    fn watcher_needs_polling(&self) -> bool {
+        if self.hidden_to_tray.load(Ordering::SeqCst) {
+            return false;
+        }
+        let st = self.get_state();
+        if st.collapsed && is_full_hide_mode(st.mode) {
+            return true;
+        }
+        !st.collapsed && st.auto_hide && !self.auto_hide_paused.load(Ordering::SeqCst)
     }
 
     pub fn get_state(&self) -> DockState {
@@ -257,6 +322,8 @@ impl DockController {
 
     pub fn set_auto_hide_paused(&self, paused: bool) {
         self.auto_hide_paused.store(paused, Ordering::SeqCst);
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        self.notify_watcher();
     }
 
     /// Apply initial docked position, size, and always-on-top state on desktop startup.
@@ -285,6 +352,7 @@ impl DockController {
                     self.apply_window_rect(&win, rect, true);
                 }
             }
+            self.notify_watcher();
         }
 
         self.emit_dock_state(app, &next);
@@ -318,6 +386,7 @@ impl DockController {
                     self.reapply_geometry_for_state(&win, &next, device);
                 }
             }
+            self.notify_watcher();
         }
         #[cfg(any(target_os = "android", target_os = "ios"))]
         let _ = (mode_changed, size_changed);
@@ -343,20 +412,21 @@ impl DockController {
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         {
             use tauri::Manager;
+            self.bump_hide_trim_gen();
+            self.bump_blur_low_gen();
             if let Some(win) = app.get_webview_window("main") {
                 #[cfg(target_os = "windows")]
                 {
                     crate::platform_win::set_window_no_activate(&win, false);
-                    crate::platform_win::set_webview_memory_low(&win, false);
+                    crate::platform_win::resume_webview(&win);
                 }
                 self.reapply_geometry_for_state(&win, &next, &device);
                 let _ = win.show();
             }
-        }
-
-        #[cfg(not(any(target_os = "android", target_os = "ios")))]
-        if let Ok(mut t) = self.last_expand_at.lock() {
-            *t = Instant::now();
+            if let Ok(mut t) = self.last_expand_at.lock() {
+                *t = Instant::now();
+            }
+            self.notify_watcher();
         }
         self.emit_dock_state(app, &next);
         next
@@ -372,6 +442,8 @@ impl DockController {
         if let Ok(mut guard) = self.state.write() {
             *guard = next.clone();
         }
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        self.notify_watcher();
         self.emit_dock_state(app, &next);
         next
     }
@@ -407,19 +479,20 @@ impl DockController {
         if let Ok(mut guard) = self.state.write() {
             *guard = next.clone();
         }
-        #[cfg(not(any(target_os = "android", target_os = "ios")))]
-        if let Ok(mut t) = self.last_expand_at.lock() {
-            *t = Instant::now();
-        }
 
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         {
             use tauri::Manager;
+            self.bump_hide_trim_gen();
+            self.bump_blur_low_gen();
+            if let Ok(mut t) = self.last_expand_at.lock() {
+                *t = Instant::now();
+            }
             if let Some(win) = app.get_webview_window("main") {
                 #[cfg(target_os = "windows")]
                 {
                     crate::platform_win::set_window_no_activate(&win, false);
-                    crate::platform_win::set_webview_memory_low(&win, false);
+                    crate::platform_win::resume_webview(&win);
                 }
 
                 if let Some(work) = self.resolve_work_area_for_window(&win) {
@@ -431,6 +504,7 @@ impl DockController {
                 let _ = win.unminimize();
                 let _ = win.set_focus();
             }
+            self.notify_watcher();
         }
         #[cfg(any(target_os = "android", target_os = "ios"))]
         let _ = device;
@@ -450,10 +524,12 @@ impl DockController {
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         {
             use tauri::Manager;
+            self.bump_blur_low_gen();
             if let Some(win) = app.get_webview_window("main") {
+                let full_hide = is_full_hide_mode(next.mode);
                 if let Some(work) = self.resolve_work_area_for_window(&win) {
                     self.store_work_area(work.clone());
-                    if is_full_hide_mode(next.mode) {
+                    if full_hide {
                         let _ = win.hide();
                     } else {
                         let pos = win.outer_position().ok();
@@ -467,13 +543,25 @@ impl DockController {
                         crate::platform_win::set_window_no_activate(&win, true);
                         self.apply_window_rect(&win, rect, false);
                     }
-                } else if is_full_hide_mode(next.mode) {
+                } else if full_hide {
                     let _ = win.hide();
                 }
 
                 #[cfg(target_os = "windows")]
-                crate::platform_win::set_webview_memory_low(&win, true);
+                if full_hide {
+                    let trim_gen = self.bump_hide_trim_gen();
+                    crate::platform_win::suspend_webview(&win);
+                    crate::platform_win::schedule_hidden_trim(
+                        app.clone(),
+                        trim_gen,
+                        Arc::clone(&self.hide_trim_gen),
+                    );
+                } else {
+                    // Protruding tabs remain visible -> lower cache target without suspending.
+                    crate::platform_win::set_memory_usage_low(&win);
+                }
             }
+            self.notify_watcher();
         }
         #[cfg(any(target_os = "android", target_os = "ios"))]
         let _ = device;
@@ -509,10 +597,20 @@ impl DockController {
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         {
             use tauri::Manager;
+            self.bump_blur_low_gen();
+            self.notify_watcher();
             if let Some(win) = app.get_webview_window("main") {
                 win.hide().map_err(|e| format!("failed to hide window: {e}"))?;
                 #[cfg(target_os = "windows")]
-                crate::platform_win::set_webview_memory_low(&win, true);
+                {
+                    let trim_gen = self.bump_hide_trim_gen();
+                    crate::platform_win::suspend_webview(&win);
+                    crate::platform_win::schedule_hidden_trim(
+                        app.clone(),
+                        trim_gen,
+                        Arc::clone(&self.hide_trim_gen),
+                    );
+                }
             }
         }
         #[cfg(any(target_os = "android", target_os = "ios"))]
@@ -540,19 +638,20 @@ impl DockController {
         if let Ok(mut guard) = self.state.write() {
             *guard = next.clone();
         }
-        #[cfg(not(any(target_os = "android", target_os = "ios")))]
-        if let Ok(mut t) = self.last_expand_at.lock() {
-            *t = Instant::now();
-        }
 
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         {
             use tauri::Manager;
+            self.bump_hide_trim_gen();
+            self.bump_blur_low_gen();
+            if let Ok(mut t) = self.last_expand_at.lock() {
+                *t = Instant::now();
+            }
             if let Some(win) = app.get_webview_window("main") {
                 #[cfg(target_os = "windows")]
                 {
                     crate::platform_win::set_window_no_activate(&win, false);
-                    crate::platform_win::set_webview_memory_low(&win, false);
+                    crate::platform_win::resume_webview(&win);
                 }
                 if let Some(work) = self.resolve_work_area_for_window(&win) {
                     self.store_work_area(work.clone());
@@ -563,41 +662,89 @@ impl DockController {
                 let _ = win.unminimize();
                 let _ = win.set_focus();
             }
+            self.notify_watcher();
         }
 
         self.emit_dock_state(app, &next);
         reset
     }
 
+    /// Open (or focus) the standalone Calendar window.
+    /// Thread-safe to call from `tauri::async_runtime::spawn_blocking` (off the Windows UI
+    /// thread to prevent WebView2 `CreateCoreWebView2Controller` deadlocks) and guarded
+    /// against duplicate rapid-click races.
     pub fn open_calendar_window(&self, app: &AppHandle) -> Result<(), String> {
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         {
             use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
-            if let Some(existing) = app.get_webview_window("calendar") {
+            const LABEL: &str = "calendar";
+
+            if let Some(existing) = app.get_webview_window(LABEL) {
                 let _ = existing.show();
                 let _ = existing.unminimize();
                 let _ = existing.set_focus();
                 return Ok(());
             }
-            WebviewWindowBuilder::new(
+
+            {
+                let mut creating = self
+                    .creating_windows
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
+                if !creating.insert(LABEL.to_string()) {
+                    return Ok(());
+                }
+            }
+            let _guard = WindowCreateGuard {
+                set: &self.creating_windows,
+                label: LABEL.to_string(),
+            };
+
+            if let Some(existing) = app.get_webview_window(LABEL) {
+                let _ = existing.show();
+                let _ = existing.unminimize();
+                let _ = existing.set_focus();
+                return Ok(());
+            }
+
+            self.bump_hide_trim_gen();
+
+            let builder = WebviewWindowBuilder::new(
                 app,
-                "calendar",
+                LABEL,
                 WebviewUrl::App("index.html?window=calendar".into()),
             )
             .title("DeskTag — 日历视图")
             .inner_size(960.0, 660.0)
             .min_inner_size(680.0, 520.0)
             .center()
-            .decorations(false)
-            .transparent(true)
-            .build()
-            .map_err(|e| format!("failed to open calendar window: {e}"))?;
+            .decorations(false);
+
+            #[cfg(target_os = "windows")]
+            let builder = builder.transparent(false).shadow(true);
+            #[cfg(not(target_os = "windows"))]
+            let builder = builder.transparent(true);
+
+            let win = builder
+                .build()
+                .map_err(|e| format!("failed to open calendar window: {e}"))?;
+
+            #[cfg(target_os = "windows")]
+            {
+                crate::platform_win::apply_rounded_corners(&win);
+                crate::platform_win::configure_webview_settings(&win);
+            }
+            #[cfg(not(target_os = "windows"))]
+            let _ = win;
         }
         #[cfg(any(target_os = "android", target_os = "ios"))]
         let _ = app;
         Ok(())
     }
 
+    /// Open (or focus) a standalone popped-out Note window.
+    /// Thread-safe to call from `tauri::async_runtime::spawn_blocking` and guarded against
+    /// rapid duplicate creation races.
     pub fn open_note_window(&self, app: &AppHandle, note_id: &str) -> Result<(), String> {
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         {
@@ -608,22 +755,61 @@ impl DockController {
                 .take(40)
                 .collect();
             let label = format!("note-{safe_label}");
+
             if let Some(existing) = app.get_webview_window(&label) {
                 let _ = existing.show();
                 let _ = existing.unminimize();
                 let _ = existing.set_focus();
                 return Ok(());
             }
+
+            {
+                let mut creating = self
+                    .creating_windows
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
+                if !creating.insert(label.clone()) {
+                    return Ok(());
+                }
+            }
+            let _guard = WindowCreateGuard {
+                set: &self.creating_windows,
+                label: label.clone(),
+            };
+
+            if let Some(existing) = app.get_webview_window(&label) {
+                let _ = existing.show();
+                let _ = existing.unminimize();
+                let _ = existing.set_focus();
+                return Ok(());
+            }
+
+            self.bump_hide_trim_gen();
+
             let url = format!("index.html?window=note&noteId={safe_label}");
-            WebviewWindowBuilder::new(app, &label, WebviewUrl::App(url.into()))
+            let builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::App(url.into()))
                 .title("DeskTag — 便签")
                 .inner_size(520.0, 660.0)
                 .min_inner_size(340.0, 400.0)
                 .center()
-                .decorations(false)
-                .transparent(true)
+                .decorations(false);
+
+            #[cfg(target_os = "windows")]
+            let builder = builder.transparent(false).shadow(true);
+            #[cfg(not(target_os = "windows"))]
+            let builder = builder.transparent(true);
+
+            let win = builder
                 .build()
                 .map_err(|e| format!("failed to open note window: {e}"))?;
+
+            #[cfg(target_os = "windows")]
+            {
+                crate::platform_win::apply_rounded_corners(&win);
+                crate::platform_win::configure_webview_settings(&win);
+            }
+            #[cfg(not(target_os = "windows"))]
+            let _ = win;
         }
         #[cfg(any(target_os = "android", target_os = "ios"))]
         {
@@ -632,8 +818,55 @@ impl DockController {
         Ok(())
     }
 
+    /// Handle focus transitions on the `main` window: after 30 seconds unfocused, drop WebView2
+    /// memory usage target to `LOW`; restore `NORMAL` immediately on focus gain.
+    pub fn on_main_focus_changed(self: &Arc<Self>, app: &AppHandle, focused: bool) {
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        {
+            let gen = self.bump_blur_low_gen();
+            if focused {
+                #[cfg(target_os = "windows")]
+                if !self.hidden_to_tray.load(Ordering::SeqCst) && !self.get_state().collapsed {
+                    use tauri::Manager;
+                    if let Some(win) = app.get_webview_window("main") {
+                        crate::platform_win::set_memory_usage_normal(&win);
+                    }
+                }
+                #[cfg(not(target_os = "windows"))]
+                let _ = (app, gen);
+                return;
+            }
+
+            let dock = Arc::clone(self);
+            let app_handle = app.clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(BLUR_LOW_MEMORY_DELAY).await;
+                if dock.blur_low_gen.load(Ordering::SeqCst) != gen {
+                    return;
+                }
+                if dock.hidden_to_tray.load(Ordering::SeqCst) {
+                    return;
+                }
+                #[cfg(target_os = "windows")]
+                {
+                    use tauri::Manager;
+                    if let Some(win) = app_handle.get_webview_window("main") {
+                        if !win.is_focused().unwrap_or(false) {
+                            crate::platform_win::set_memory_usage_low(&win);
+                        }
+                    }
+                }
+                #[cfg(not(target_os = "windows"))]
+                let _ = app_handle;
+            });
+        }
+        #[cfg(any(target_os = "android", target_os = "ios"))]
+        let _ = (app, focused);
+    }
+
     /// Persist user move/resize events debounced by 500ms (Magpie `keepAt` pattern),
-    /// ignoring minimized (`-32000`), hidden, collapsed, or programmatic changes.
+    /// ignoring minimized (`-32000`), hidden, collapsed, or programmatic changes, and
+    /// forward focus transitions for unfocused low-memory throttling.
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     pub fn handle_window_event(
         self: &Arc<Self>,
@@ -641,6 +874,10 @@ impl DockController {
         storage: &Arc<StorageManager>,
         event: &tauri::WindowEvent,
     ) {
+        if let tauri::WindowEvent::Focused(focused) = event {
+            self.on_main_focus_changed(app, *focused);
+            return;
+        }
         if !matches!(
             event,
             tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_)
@@ -668,21 +905,34 @@ impl DockController {
         });
     }
 
-    /// Spawn the lightweight 150ms desktop watcher handling:
+    /// Spawn the Notify-gated desktop watcher handling:
     /// 1) Auto-hide collapse when cursor leaves expanded panel (+16px margin) for ~500ms
     /// 2) Full-hide (`*_hide`) screen-edge hover expand when cursor dwells within 3px for ~150ms.
+    /// Parks completely (0 wakeups/sec) when hidden to tray or when neither mode needs polling.
     pub fn spawn_auto_hide_watcher(self: &Arc<Self>, app: AppHandle) {
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         {
             let dock = Arc::clone(self);
             tauri::async_runtime::spawn(async move {
                 use tauri::Manager;
-                let mut ticker = tokio::time::interval(Duration::from_millis(150));
                 let mut outside_since: Option<Instant> = None;
                 let mut edge_dwell_since: Option<Instant> = None;
 
                 loop {
-                    ticker.tick().await;
+                    if !dock.watcher_needs_polling() {
+                        outside_since = None;
+                        edge_dwell_since = None;
+                        dock.watcher_notify.notified().await;
+                        continue;
+                    }
+
+                    tokio::select! {
+                        () = tokio::time::sleep(Duration::from_millis(150)) => {}
+                        () = dock.watcher_notify.notified() => {
+                            continue;
+                        }
+                    }
+
                     let st = dock.get_state();
                     let paused = dock.auto_hide_paused.load(Ordering::SeqCst);
                     let hidden_tray = dock.hidden_to_tray.load(Ordering::SeqCst);
@@ -827,6 +1077,8 @@ impl DockController {
         if st.collapsed {
             if is_full_hide_mode(st.mode) {
                 let _ = win.hide();
+                #[cfg(target_os = "windows")]
+                crate::platform_win::suspend_webview(win);
             } else {
                 let pos = win.outer_position().ok();
                 let rect = compute_collapsed_tabs_rect(
@@ -1051,5 +1303,52 @@ mod tests {
         assert_eq!(exp.x + exp.width as i32, work.right);
         assert!(exp.y >= work.top);
         assert!(exp.y + exp.height as i32 <= work.bottom);
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    #[test]
+    fn test_watcher_polling_gate_and_window_create_guard() {
+        // Default: RightTabs, expanded, auto_hide = false -> parks (false)
+        let mut dev = DeviceSettings::default();
+        dev.dock_mode = DockMode::RightTabs;
+        dev.auto_hide = false;
+        let ctrl = DockController::new(&dev);
+        assert!(!ctrl.watcher_needs_polling());
+
+        // Expanded + auto_hide = true -> polls unless paused or hidden to tray
+        ctrl.state.write().unwrap().auto_hide = true;
+        assert!(ctrl.watcher_needs_polling());
+        ctrl.set_auto_hide_paused(true);
+        assert!(!ctrl.watcher_needs_polling());
+        ctrl.set_auto_hide_paused(false);
+        assert!(ctrl.watcher_needs_polling());
+
+        // Hidden to tray -> always parks even with auto_hide / full-hide collapsed
+        ctrl.hidden_to_tray.store(true, Ordering::SeqCst);
+        assert!(!ctrl.watcher_needs_polling());
+        ctrl.hidden_to_tray.store(false, Ordering::SeqCst);
+
+        // Collapsed in RightTabs -> parks (tabs visible on screen, no edge dwell needed)
+        {
+            let mut st = ctrl.state.write().unwrap();
+            st.collapsed = true;
+            st.mode = DockMode::RightTabs;
+        }
+        assert!(!ctrl.watcher_needs_polling());
+
+        // Collapsed in RightHide -> polls to detect edge hover wake
+        ctrl.state.write().unwrap().mode = DockMode::RightHide;
+        assert!(ctrl.watcher_needs_polling());
+
+        // WindowCreateGuard releases in-flight label cleanly on drop
+        {
+            assert!(ctrl.creating_windows.lock().unwrap().insert("calendar".into()));
+            let _guard = WindowCreateGuard {
+                set: &ctrl.creating_windows,
+                label: "calendar".into(),
+            };
+            assert!(!ctrl.creating_windows.lock().unwrap().insert("calendar".into()));
+        }
+        assert!(ctrl.creating_windows.lock().unwrap().insert("calendar".into()));
     }
 }

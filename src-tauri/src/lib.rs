@@ -4,10 +4,11 @@ pub mod platform_mac;
 pub mod platform_win;
 pub mod reminders;
 pub mod storage;
+pub mod updater;
 pub mod webdav;
 pub mod window_dock;
 
-use std::sync::Arc;
+use std::sync::{Arc, Once};
 use tauri::{AppHandle, Manager};
 
 use crate::models::DeviceSettings;
@@ -24,10 +25,15 @@ pub struct AppState {
     pub webdav: Arc<WebDavManager>,
 }
 
-/// Configure OS-level environment flags before Tauri initializes the WebView runtime.
+/// Configure OS-level environment flags and execute pending post-update cleanup once
+/// before Tauri initializes single-instance locking or the WebView runtime.
 pub fn prepare_runtime_env() {
-    #[cfg(target_os = "windows")]
-    platform_win::configure_webview2_env();
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        updater::handle_startup_cleanup();
+        #[cfg(target_os = "windows")]
+        platform_win::configure_webview2_env();
+    });
 }
 
 /// Apply the launch-at-login preference via `tauri-plugin-autostart` on desktop platforms.
@@ -130,7 +136,11 @@ fn setup_system_tray(app: &AppHandle) -> tauri::Result<()> {
                     let _ = state.dock.expand(app_handle);
                 }
                 "tray_calendar" => {
-                    let _ = state.dock.open_calendar_window(app_handle);
+                    let handle = app_handle.clone();
+                    let dock = state.dock.clone();
+                    tauri::async_runtime::spawn_blocking(move || {
+                        let _ = dock.open_calendar_window(&handle);
+                    });
                 }
                 "tray_sync" => {
                     let webdav = state.webdav.clone();
@@ -216,6 +226,8 @@ pub fn run() {
                         if device.close_to_tray {
                             api.prevent_close();
                             let _ = state.dock.hide_to_tray(app_handle);
+                        } else {
+                            app_handle.exit(0);
                         }
                     }
                     _ => {
@@ -285,6 +297,7 @@ pub fn run() {
             commands::reset_panel_layout,
             commands::open_calendar_window,
             commands::open_note_window,
+            commands::quit_app,
             commands::save_attachment,
             commands::open_attachment,
             commands::read_attachment_data_url,
@@ -311,6 +324,8 @@ pub fn run() {
             commands::webdav_export_setup_text,
             commands::webdav_import_setup_text,
             commands::trigger_debounced_sync,
+            commands::check_for_update,
+            commands::download_and_install_update,
             commands::get_platform_info,
         ])
         .run(tauri::generate_context!())

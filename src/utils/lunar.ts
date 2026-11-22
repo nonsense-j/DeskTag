@@ -155,31 +155,24 @@ export function solarToLunar(year: number, month: number, day: number): LunarDat
   const leap = leapMonth(lYear);
   let isLeap = false;
   let lMonth = 1;
-  let daysInMonth = 0;
 
-  for (; lMonth <= 12 && offset > 0; lMonth += 1) {
-    if (leap > 0 && lMonth === leap + 1 && !isLeap) {
-      lMonth -= 1;
-      isLeap = true;
-      daysInMonth = leapDays(lYear);
-    } else {
-      daysInMonth = monthDays(lYear, lMonth);
-    }
-
-    if (offset < daysInMonth) break;
-    offset -= daysInMonth;
-
-    if (isLeap && lMonth === leap + 1) {
+  for (let m = 1; m <= 12; m += 1) {
+    const regularDays = monthDays(lYear, m);
+    if (offset < regularDays) {
+      lMonth = m;
       isLeap = false;
+      break;
     }
-  }
+    offset -= regularDays;
 
-  if (offset === 0 && leap > 0 && lMonth === leap + 1) {
-    if (isLeap) {
-      isLeap = false;
-    } else {
-      isLeap = true;
-      lMonth -= 1;
+    if (leap === m) {
+      const lDays = leapDays(lYear);
+      if (offset < lDays) {
+        lMonth = m;
+        isLeap = true;
+        break;
+      }
+      offset -= lDays;
     }
   }
 

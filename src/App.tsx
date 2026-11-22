@@ -1,7 +1,10 @@
 import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
+import { isTauriRuntime } from './api/tauri';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import {
   ArrowLeftIcon,
   CalendarIcon,
+  CloseIcon,
   ListIcon,
   PlusIcon,
   QuadrantIcon,
@@ -22,609 +25,6 @@ const QuadrantView = lazy(() => import('./components/QuadrantView'));
 const SearchVoiceModals = lazy(() => import('./components/SearchVoiceModals'));
 const SettingsModal = lazy(() => import('./components/SettingsModal'));
 
-/**
- * Scoped styles for DeskTag's view components (SettingsModal, WebDavSyncCard,
- * CalendarView, QuadrantView) harmonized with DeskTag's 11 built-in theme tokens.
- */
-const DT_VIEW_STYLES = `
-.dt-settings-card {
-  padding: 14px 16px;
-  border-radius: 12px;
-  border: 1px solid var(--border);
-  background: var(--bg-header);
-  display: flex;
-  flex-direction: column;
-}
-.dt-settings-card-title {
-  font-size: 14.5px;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-.dt-setting-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 4px 0;
-}
-.dt-setting-title {
-  font-size: 13.5px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-.dt-setting-desc {
-  font-size: 12px;
-  color: var(--text-muted);
-  margin-top: 2px;
-  line-height: 1.45;
-}
-.dt-setting-divider {
-  height: 1px;
-  background: var(--border);
-  margin: 10px 0;
-}
-
-/* Buttons */
-.dt-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  padding: 6px 13px;
-  border-radius: 9px;
-  font-size: 12.5px;
-  font-weight: 600;
-  border: 1px solid transparent;
-  transition: background-color 0.14s ease, border-color 0.14s ease, opacity 0.14s ease;
-  white-space: nowrap;
-  cursor: pointer;
-}
-.dt-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-.dt-btn-xs {
-  padding: 4px 9px;
-  font-size: 11.5px;
-  border-radius: 7px;
-}
-.dt-btn-primary {
-  background: var(--accent);
-  color: var(--accent-text);
-}
-.dt-btn-primary:hover:not(:disabled) {
-  background: var(--accent-hover);
-}
-.dt-btn-soft {
-  background: var(--accent-soft);
-  color: var(--accent-soft-text);
-  border-color: var(--accent-border);
-}
-.dt-btn-soft:hover:not(:disabled) {
-  filter: brightness(0.97);
-}
-.dt-btn-ghost {
-  background: var(--bg-surface);
-  color: var(--text-secondary);
-  border-color: var(--border);
-}
-.dt-btn-ghost:hover:not(:disabled) {
-  background: var(--bg-surface-hover);
-  color: var(--text-primary);
-}
-.dt-btn-danger {
-  background: var(--danger);
-  color: #ffffff;
-}
-.dt-btn-danger-soft {
-  background: var(--danger-soft);
-  color: var(--danger);
-  border-color: rgba(217, 77, 74, 0.35);
-}
-.dt-link-btn {
-  border: none;
-  background: transparent;
-  color: var(--accent);
-  font-size: 11.5px;
-  cursor: pointer;
-  padding: 0;
-}
-.dt-icon-btn-xs {
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 15px;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-.dt-icon-btn-xs:hover {
-  background: var(--bg-surface-hover);
-  color: var(--text-primary);
-}
-
-/* Inputs & Selects */
-.dt-input,
-.dt-select,
-.dt-textarea {
-  width: 100%;
-  padding: 6px 10px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--bg-input);
-  color: var(--text-primary);
-  font-size: 12.5px;
-  line-height: 1.45;
-  transition: border-color 0.14s ease, box-shadow 0.14s ease;
-}
-.dt-select {
-  width: auto;
-  min-width: 132px;
-  cursor: pointer;
-}
-.dt-input:focus,
-.dt-select:focus,
-.dt-textarea:focus {
-  border-color: var(--accent-border);
-  box-shadow: 0 0 0 2px var(--accent-soft);
-}
-.dt-input.is-error {
-  border-color: var(--danger);
-}
-.dt-input-with-action {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-.dt-input-with-action .dt-input {
-  padding-right: 36px;
-}
-.dt-input-eye {
-  position: absolute;
-  right: 6px;
-  padding: 2px 6px;
-  border-radius: 5px;
-  font-size: 11px;
-  color: var(--text-muted);
-  background: transparent;
-  cursor: pointer;
-}
-.dt-input-eye:hover {
-  background: var(--bg-surface-hover);
-  color: var(--text-primary);
-}
-
-/* WebDAV Sync Card */
-.dt-webdav-card {
-  gap: 10px;
-}
-.dt-webdav-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.dt-webdav-title-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-}
-.dt-webdav-title-row {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  flex-wrap: wrap;
-}
-.dt-status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  display: inline-block;
-  flex-shrink: 0;
-}
-.dt-status-dot.is-pulsing {
-  animation: dt-pulse 1.1s ease-in-out infinite;
-}
-@keyframes dt-pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.45; transform: scale(0.82); }
-}
-.dt-e2ee-badge,
-.dt-e2ee-badge-inline {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 1px 7px;
-  border-radius: 999px;
-  background: var(--accent-soft);
-  border: 1px solid var(--accent-border);
-  color: var(--accent-soft-text);
-  font-size: 10.5px;
-  font-weight: 600;
-}
-.dt-e2ee-badge-inline {
-  margin-left: 6px;
-}
-.dt-webdav-subtitle {
-  font-size: 12px;
-  color: var(--text-muted);
-  padding-left: 15px;
-}
-.dt-webdav-meta-sep {
-  color: var(--text-muted);
-  font-size: 11.5px;
-}
-.dt-webdav-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.dt-webdav-banner {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 8px 10px;
-  border-radius: 9px;
-  font-size: 12px;
-  line-height: 1.5;
-  flex-wrap: wrap;
-}
-.dt-webdav-banner.is-info {
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  color: var(--text-secondary);
-}
-.dt-webdav-banner.is-success {
-  background: rgba(91, 140, 90, 0.12);
-  border: 1px solid rgba(91, 140, 90, 0.35);
-  color: var(--success);
-}
-.dt-webdav-banner.is-warning {
-  background: rgba(212, 154, 53, 0.12);
-  border: 1px solid rgba(212, 154, 53, 0.38);
-  color: var(--text-primary);
-}
-.dt-webdav-banner.is-error {
-  background: var(--danger-soft);
-  border: 1px solid rgba(217, 77, 74, 0.35);
-  color: var(--danger);
-}
-.dt-webdav-banner-body {
-  flex: 1;
-  min-width: 180px;
-}
-.dt-webdav-banner-hint {
-  font-size: 11.5px;
-  color: var(--text-secondary);
-  margin-top: 2px;
-}
-.dt-webdav-banner-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-.dt-webdav-form {
-  display: flex;
-  flex-direction: column;
-  gap: 11px;
-  padding-top: 10px;
-  border-top: 1px solid var(--border);
-}
-.dt-webdav-toggle-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  cursor: pointer;
-}
-.dt-field-group {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-.dt-field-label {
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-.dt-field-label-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-.dt-field-hint {
-  font-size: 11.5px;
-  color: var(--text-muted);
-  line-height: 1.45;
-}
-.dt-field-error {
-  font-size: 11.5px;
-  color: var(--danger);
-  line-height: 1.45;
-  font-weight: 500;
-}
-.dt-preset-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.dt-chip {
-  padding: 4px 10px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--bg-surface);
-  color: var(--text-secondary);
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 0.14s ease;
-}
-.dt-chip:hover {
-  border-color: var(--accent-border);
-  color: var(--text-primary);
-}
-.dt-chip.is-active {
-  background: var(--pill-active-bg);
-  border-color: var(--accent-border);
-  color: var(--pill-active-text);
-  font-weight: 600;
-}
-.dt-form-grid-2 {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-.dt-form-grid-2-1 {
-  display: grid;
-  grid-template-columns: minmax(0, 2.2fr) minmax(0, 1fr);
-  gap: 10px;
-}
-.dt-webdav-options-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-}
-.dt-check-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  cursor: pointer;
-  font-size: 12.5px;
-}
-.dt-check-row input {
-  margin-top: 3px;
-}
-.dt-check-row span {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-.dt-check-row small {
-  font-size: 11.5px;
-  color: var(--text-muted);
-}
-.dt-webdav-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.dt-webdav-test-result {
-  padding: 9px 11px;
-  border-radius: 9px;
-  font-size: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-.dt-webdav-test-result.is-ok {
-  background: rgba(91, 140, 90, 0.11);
-  border: 1px solid rgba(91, 140, 90, 0.35);
-}
-.dt-webdav-test-result.is-fail {
-  background: var(--danger-soft);
-  border: 1px solid rgba(217, 77, 74, 0.35);
-}
-.dt-webdav-test-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  font-weight: 600;
-  flex-wrap: wrap;
-}
-.dt-webdav-latency {
-  font-size: 11px;
-  font-weight: 400;
-  color: var(--text-secondary);
-}
-.dt-webdav-test-msg {
-  color: var(--text-secondary);
-  word-break: break-word;
-}
-.dt-suggested-url-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  flex-wrap: wrap;
-  padding-top: 5px;
-  border-top: 1px dashed var(--border-strong);
-}
-.dt-suggested-url-row code {
-  font-size: 11.5px;
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: var(--bg-surface);
-}
-.dt-webdav-preview-box {
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: var(--bg-surface);
-  border: 1px solid var(--accent-border);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.dt-webdav-preview-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 12.5px;
-}
-.dt-webdav-preview-stats {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-.dt-stat-pill {
-  font-size: 11px;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 999px;
-}
-.dt-stat-pill.is-up {
-  background: var(--accent-soft);
-  color: var(--accent-soft-text);
-}
-.dt-stat-pill.is-down {
-  background: rgba(91, 140, 90, 0.14);
-  color: var(--success);
-}
-.dt-stat-pill.is-conflict {
-  background: var(--danger-soft);
-  color: var(--danger);
-}
-.dt-webdav-preview-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  max-height: 150px;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.dt-webdav-preview-list li {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-}
-.dt-diff-tag {
-  font-size: 10.5px;
-  padding: 1px 6px;
-  border-radius: 5px;
-  font-weight: 600;
-  flex-shrink: 0;
-}
-.dt-diff-tag.is-up { background: var(--accent-soft); color: var(--accent-soft-text); }
-.dt-diff-tag.is-down { background: rgba(91, 140, 90, 0.15); color: var(--success); }
-.dt-diff-tag.is-conflict { background: var(--danger-soft); color: var(--danger); }
-.dt-diff-tag.is-muted { background: var(--tag-bg); color: var(--text-muted); }
-.dt-diff-type {
-  font-size: 11px;
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-.dt-diff-title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.dt-diff-more {
-  font-size: 11.5px;
-  color: var(--text-muted);
-}
-.dt-webdav-preview-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  flex-wrap: wrap;
-  padding-top: 6px;
-  border-top: 1px solid var(--border);
-}
-.dt-webdav-preview-btns {
-  display: flex;
-  gap: 6px;
-}
-.dt-webdav-advanced {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding-top: 10px;
-  border-top: 1px dashed var(--border-strong);
-}
-.dt-webdav-advanced-btns {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.dt-setup-box {
-  padding: 9px 10px;
-  border-radius: 9px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-}
-.dt-setup-textarea {
-  font-family: monospace;
-  font-size: 11.5px;
-  resize: vertical;
-}
-.dt-import-row {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-}
-.dt-inline-confirm {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  flex-wrap: wrap;
-  font-size: 12px;
-}
-.dt-inline-confirm-btns {
-  display: flex;
-  gap: 6px;
-}
-
-/* Hover Polish */
-.dt-cal-todo-item:hover,
-.dt-quadrant-task:hover {
-  background: var(--bg-surface-hover) !important;
-}
-
-@media (max-width: 560px) {
-  .dt-form-grid-2,
-  .dt-form-grid-2-1 {
-    grid-template-columns: 1fr;
-  }
-  .dt-import-row {
-    flex-direction: column;
-    align-items: stretch;
-  }
-}
-`;
-
 type WindowRoute =
   | { kind: 'main' }
   | { kind: 'calendar' }
@@ -642,9 +42,95 @@ function parseWindowRoute(): WindowRoute {
   return { kind: 'main' };
 }
 
+/**
+ * Lightweight draggable + closeable fallback bar used for frameless standalone
+ * windows (`calendar`, `note-*`) while hydrating state or loading lazy chunks.
+ */
+const StandaloneLoadingFallback: React.FC<{ title: string }> = ({ title }) => {
+  const handleClose = async () => {
+    if (isTauriRuntime()) {
+      try {
+        const { getCurrentWindow } = await import('@tauri-apps/api/window');
+        await getCurrentWindow().close();
+        return;
+      } catch {
+        // Fallback below
+      }
+    }
+    window.close();
+  };
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        width: '100%',
+        height: '100%',
+        minHeight: 0,
+        background: 'var(--bg-panel)',
+        color: 'var(--text-primary)',
+        overflow: 'hidden',
+      }}
+    >
+      <header
+        data-tauri-drag-region
+        style={{
+          height: 40,
+          flexShrink: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '0 10px 0 14px',
+          background: 'var(--bg-header)',
+          borderBottom: '1px solid var(--border)',
+          userSelect: 'none',
+        }}
+      >
+        <span data-tauri-drag-region style={{ fontWeight: 600, fontSize: 13.5 }}>
+          {title}
+        </span>
+        <button
+          type="button"
+          title="关闭窗口"
+          aria-label="关闭窗口"
+          onClick={() => void handleClose()}
+          style={{
+            width: 28,
+            height: 28,
+            border: 'none',
+            borderRadius: 7,
+            background: 'transparent',
+            color: 'var(--text-secondary)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+          }}
+        >
+          <CloseIcon size={14} />
+        </button>
+      </header>
+      <div
+        style={{
+          flex: 1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: 'var(--text-muted)',
+          fontSize: 13,
+        }}
+      >
+        正在加载…
+      </div>
+    </div>
+  );
+};
+
 const DeskTagShell: React.FC = () => {
   const {
     loading,
+    device,
     dock,
     isMobileLayout,
     activeTab,
@@ -661,7 +147,11 @@ const DeskTagShell: React.FC = () => {
     showVoiceModal,
     toastMessage,
     webdavStatus,
+    updateResult,
+    updateBannerDismissed,
+    hasUnignoredUpdate,
     setActiveTab,
+    setMobileSection,
     setMobileViewsSubTab,
     setEditingTodoId,
     setReminderTodoId,
@@ -672,15 +162,42 @@ const DeskTagShell: React.FC = () => {
     closeAllPopovers,
     triggerWebdavSyncNow,
     refreshWebdav,
+    checkForUpdates,
+    skipUpdateVersion,
+    dismissUpdateBanner,
   } = useDeskTagStore();
 
   const route = useMemo(() => parseWindowRoute(), []);
+
+  // Settings initial tab override (e.g. jump directly to About from update banner / menu)
+  const [settingsInitialTab, setSettingsInitialTab] = useState<'about' | undefined>(undefined);
 
   // Mobile lists selection + pull-to-sync state
   const [mobileListId, setMobileListId] = useState<string | null>(null);
   const [pullOffset, setPullOffset] = useState(0);
   const touchStartYRef = useRef<number | null>(null);
   const mobileBodyRef = useRef<HTMLDivElement | null>(null);
+  const startupUpdateCheckedRef = useRef(false);
+
+  // Reset initialTab override once Settings closes
+  useEffect(() => {
+    const settingsVisible = showSettings || (isMobileLayout && mobileSection === 'settings');
+    if (!settingsVisible && settingsInitialTab !== undefined) {
+      setSettingsInitialTab(undefined);
+    }
+  }, [showSettings, isMobileLayout, mobileSection, settingsInitialTab]);
+
+  // 4-second delayed silent startup update check on the main window only (once per session)
+  useEffect(() => {
+    if (route.kind !== 'main' || loading || startupUpdateCheckedRef.current) return;
+    if (device.autoCheckUpdates === false) return;
+    const timer = window.setTimeout(() => {
+      if (startupUpdateCheckedRef.current) return;
+      startupUpdateCheckedRef.current = true;
+      void checkForUpdates({ force: false, silent: true });
+    }, 4000);
+    return () => window.clearTimeout(timer);
+  }, [route.kind, loading, device.autoCheckUpdates, checkForUpdates]);
 
   // Keep mobileListId valid if lists change
   useEffect(() => {
@@ -748,8 +265,24 @@ const DeskTagShell: React.FC = () => {
     return () => document.removeEventListener('visibilitychange', onVisChange);
   }, [refreshWebdav]);
 
+  const handleOpenSettingsAbout = () => {
+    setSettingsInitialTab('about');
+    if (isMobileLayout) {
+      setShowSettings(false, 'about');
+      setMobileSection('settings');
+    } else {
+      setShowSettings(true, 'about');
+    }
+  };
+
   // Loading placeholder
   if (loading) {
+    if (route.kind === 'calendar') {
+      return <StandaloneLoadingFallback title="日历视图" />;
+    }
+    if (route.kind === 'note') {
+      return <StandaloneLoadingFallback title="独立便签" />;
+    }
     return (
       <div
         style={{
@@ -775,15 +308,14 @@ const DeskTagShell: React.FC = () => {
   // -------------------------------------------------------------------------
   if (route.kind === 'calendar') {
     return (
-      <>
-        <style>{DT_VIEW_STYLES}</style>
-        <Suspense fallback={null}>
+      <ErrorBoundary route="calendar" title="DeskTag — 日历视图">
+        <Suspense fallback={<StandaloneLoadingFallback title="日历视图" />}>
           <CalendarView standalone />
         </Suspense>
         <TodoDetailModal />
         <ReminderModal />
         {toastMessage && <div className="desktag-toast">{toastMessage}</div>}
-      </>
+      </ErrorBoundary>
     );
   }
 
@@ -793,17 +325,49 @@ const DeskTagShell: React.FC = () => {
   if (route.kind === 'note') {
     const resolvedNoteId = route.noteId || activeNotes[0]?.id || '';
     return (
-      <>
-        <style>{DT_VIEW_STYLES}</style>
-        <Suspense fallback={null}>
+      <ErrorBoundary route="note" title="DeskTag — 独立便签">
+        <Suspense fallback={<StandaloneLoadingFallback title="独立便签" />}>
           <NoteView noteId={resolvedNoteId} standalone />
         </Suspense>
         <TodoDetailModal />
         <ReminderModal />
         {toastMessage && <div className="desktag-toast">{toastMessage}</div>}
-      </>
+      </ErrorBoundary>
     );
   }
+
+  // Shared non-intrusive update banner (shown at top of panel body when an unignored update exists)
+  const updateBannerNode =
+    hasUnignoredUpdate && !updateBannerDismissed && updateResult ? (
+      <div className="dt-update-banner" role="status" aria-live="polite">
+        <span className="dt-update-banner-text">发现新版本 v{updateResult.latestVersion}</span>
+        <div className="dt-update-banner-actions">
+          <button
+            type="button"
+            className="dt-btn dt-btn-primary dt-btn-xs"
+            onClick={handleOpenSettingsAbout}
+          >
+            查看更新
+          </button>
+          <button
+            type="button"
+            className="dt-link-btn"
+            onClick={() => void skipUpdateVersion(updateResult.latestVersion)}
+          >
+            跳过此版本
+          </button>
+          <button
+            type="button"
+            className="dt-icon-btn-xs"
+            title="暂不提示"
+            aria-label="关闭更新提示"
+            onClick={dismissUpdateBanner}
+          >
+            ×
+          </button>
+        </div>
+      </div>
+    ) : null;
 
   // -------------------------------------------------------------------------
   // Route 3: Mobile / Android Touch-First Shell
@@ -838,7 +402,6 @@ const DeskTagShell: React.FC = () => {
 
     return (
       <div className="desktag-shell is-mobile">
-        <style>{DT_VIEW_STYLES}</style>
         <MobileTopHeader />
 
         {pullOffset > 12 && (
@@ -870,259 +433,263 @@ const DeskTagShell: React.FC = () => {
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
         >
+          {updateBannerNode}
+
           <Suspense fallback={null}>
             {/* Mobile Tab 1: 待办 */}
             {mobileSection === 'todo' && (showQuadrant ? <QuadrantView /> : <TodoView />)}
 
-          {/* Mobile Tab 2: 清单 */}
-          {mobileSection === 'lists' && (
-            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  padding: '8px 12px',
-                  overflowX: 'auto',
-                  borderBottom: '1px solid var(--border)',
-                  background: 'var(--bg-panel)',
-                  flexShrink: 0,
-                }}
-              >
-                {activeLists.map((list) => {
-                  const active = mobileListId === list.id;
-                  return (
-                    <button
-                      key={list.id}
-                      type="button"
-                      onClick={() => setMobileListId(list.id)}
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 6,
-                        padding: '5px 11px',
-                        borderRadius: 999,
-                        border: `1px solid ${active ? 'var(--accent-border)' : 'var(--border)'}`,
-                        background: active ? 'var(--pill-active-bg)' : 'var(--bg-surface)',
-                        color: active ? 'var(--pill-active-text)' : 'var(--text-secondary)',
-                        fontWeight: active ? 600 : 500,
-                        fontSize: 12.5,
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      <span
-                        style={{
-                          width: 7,
-                          height: 7,
-                          borderRadius: '50%',
-                          background: list.color,
-                        }}
-                      />
-                      <span>{list.name}</span>
-                    </button>
-                  );
-                })}
-                <button
-                  type="button"
-                  onClick={() => setShowListManager(true)}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 4,
-                    padding: '5px 10px',
-                    borderRadius: 999,
-                    border: '1px dashed var(--border-strong)',
-                    color: 'var(--text-muted)',
-                    fontSize: 12,
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  <PlusIcon size={12} />
-                  <span>管理清单</span>
-                </button>
-              </div>
-              {mobileListId ? (
-                <TodoView listIdOverride={mobileListId} />
-              ) : (
+            {/* Mobile Tab 2: 清单 */}
+            {mobileSection === 'lists' && (
+              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
                 <div
                   style={{
-                    flex: 1,
                     display: 'flex',
-                    flexDirection: 'column',
                     alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 10,
-                    color: 'var(--text-muted)',
-                    fontSize: 13,
+                    gap: 6,
+                    padding: '8px 12px',
+                    overflowX: 'auto',
+                    borderBottom: '1px solid var(--border)',
+                    background: 'var(--bg-panel)',
+                    flexShrink: 0,
                   }}
                 >
-                  <ListIcon size={24} />
-                  <span>还没有自定义清单</span>
+                  {activeLists.map((list) => {
+                    const active = mobileListId === list.id;
+                    return (
+                      <button
+                        key={list.id}
+                        type="button"
+                        onClick={() => setMobileListId(list.id)}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          padding: '5px 11px',
+                          borderRadius: 999,
+                          border: `1px solid ${active ? 'var(--accent-border)' : 'var(--border)'}`,
+                          background: active ? 'var(--pill-active-bg)' : 'var(--bg-surface)',
+                          color: active ? 'var(--pill-active-text)' : 'var(--text-secondary)',
+                          fontWeight: active ? 600 : 500,
+                          fontSize: 12.5,
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        <span
+                          style={{
+                            width: 7,
+                            height: 7,
+                            borderRadius: '50%',
+                            background: list.color,
+                          }}
+                        />
+                        <span>{list.name}</span>
+                      </button>
+                    );
+                  })}
                   <button
                     type="button"
-                    className="dt-btn dt-btn-primary"
                     onClick={() => setShowListManager(true)}
-                  >
-                    新建清单
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Mobile Tab 3: 便签 */}
-          {mobileSection === 'notes' && (
-            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-              {activeMobileNoteId ? (
-                <>
-                  <div
                     style={{
-                      display: 'flex',
+                      display: 'inline-flex',
                       alignItems: 'center',
-                      padding: '6px 12px',
-                      background: 'var(--bg-header)',
-                      borderBottom: '1px solid var(--border)',
-                      flexShrink: 0,
+                      gap: 4,
+                      padding: '5px 10px',
+                      borderRadius: 999,
+                      border: '1px dashed var(--border-strong)',
+                      color: 'var(--text-muted)',
+                      fontSize: 12,
+                      whiteSpace: 'nowrap',
                     }}
                   >
+                    <PlusIcon size={12} />
+                    <span>管理清单</span>
+                  </button>
+                </div>
+                {mobileListId ? (
+                  <TodoView listIdOverride={mobileListId} />
+                ) : (
+                  <div
+                    style={{
+                      flex: 1,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 10,
+                      color: 'var(--text-muted)',
+                      fontSize: 13,
+                    }}
+                  >
+                    <ListIcon size={24} />
+                    <span>还没有自定义清单</span>
                     <button
                       type="button"
-                      onClick={() => setActiveTab({ kind: 'note_library' })}
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 5,
-                        color: 'var(--accent)',
-                        fontSize: 12.5,
-                        fontWeight: 600,
-                      }}
+                      className="dt-btn dt-btn-primary"
+                      onClick={() => setShowListManager(true)}
                     >
-                      <ArrowLeftIcon size={14} />
-                      <span>返回便签库</span>
+                      新建清单
                     </button>
                   </div>
-                  <NoteView noteId={activeMobileNoteId} />
-                </>
-              ) : (
-                <>
-                  {pinnedNotes.length > 0 && (
+                )}
+              </div>
+            )}
+
+            {/* Mobile Tab 3: 便签 */}
+            {mobileSection === 'notes' && (
+              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+                {activeMobileNoteId ? (
+                  <>
                     <div
                       style={{
                         display: 'flex',
                         alignItems: 'center',
-                        gap: 6,
-                        padding: '8px 12px 4px',
-                        overflowX: 'auto',
+                        padding: '6px 12px',
+                        background: 'var(--bg-header)',
+                        borderBottom: '1px solid var(--border)',
                         flexShrink: 0,
                       }}
                     >
-                      <span style={{ fontSize: 11.5, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                        置顶：
-                      </span>
-                      {pinnedNotes.map((n) => (
-                        <button
-                          key={n.id}
-                          type="button"
-                          onClick={() => setActiveTab({ kind: 'note', noteId: n.id })}
-                          style={{
-                            padding: '4px 10px',
-                            borderRadius: 999,
-                            border: '1px solid var(--accent-border)',
-                            background: 'var(--accent-soft)',
-                            color: 'var(--accent-soft-text)',
-                            fontSize: 12,
-                            fontWeight: 500,
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {n.title || '便签'}
-                        </button>
-                      ))}
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab({ kind: 'note_library' })}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 5,
+                          color: 'var(--accent)',
+                          fontSize: 12.5,
+                          fontWeight: 600,
+                        }}
+                      >
+                        <ArrowLeftIcon size={14} />
+                        <span>返回便签库</span>
+                      </button>
                     </div>
-                  )}
-                  <NoteLibraryView
-                    onOpenNote={(id) => setActiveTab({ kind: 'note', noteId: id })}
-                  />
-                </>
-              )}
-            </div>
-          )}
+                    <NoteView noteId={activeMobileNoteId} />
+                  </>
+                ) : (
+                  <>
+                    {pinnedNotes.length > 0 && (
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          padding: '8px 12px 4px',
+                          overflowX: 'auto',
+                          flexShrink: 0,
+                        }}
+                      >
+                        <span style={{ fontSize: 11.5, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                          置顶：
+                        </span>
+                        {pinnedNotes.map((n) => (
+                          <button
+                            key={n.id}
+                            type="button"
+                            onClick={() => setActiveTab({ kind: 'note', noteId: n.id })}
+                            style={{
+                              padding: '4px 10px',
+                              borderRadius: 999,
+                              border: '1px solid var(--accent-border)',
+                              background: 'var(--accent-soft)',
+                              color: 'var(--accent-soft-text)',
+                              fontSize: 12,
+                              fontWeight: 500,
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {n.title || '便签'}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <NoteLibraryView
+                      onOpenNote={(id) => setActiveTab({ kind: 'note', noteId: id })}
+                    />
+                  </>
+                )}
+              </div>
+            )}
 
-          {/* Mobile Tab 4: 视图 (Calendar + Quadrants) */}
-          {mobileSection === 'views' && (
-            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'center',
-                  padding: '8px 12px',
-                  borderBottom: '1px solid var(--border)',
-                  background: 'var(--bg-header)',
-                  flexShrink: 0,
-                }}
-              >
+            {/* Mobile Tab 4: 视图 (Calendar + Quadrants) */}
+            {mobileSection === 'views' && (
+              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
                 <div
                   style={{
-                    display: 'inline-flex',
-                    padding: 2,
-                    borderRadius: 9,
-                    background: 'var(--bg-panel)',
-                    border: '1px solid var(--border)',
+                    display: 'flex',
+                    justifyContent: 'center',
+                    padding: '8px 12px',
+                    borderBottom: '1px solid var(--border)',
+                    background: 'var(--bg-header)',
+                    flexShrink: 0,
                   }}
                 >
-                  <button
-                    type="button"
-                    onClick={() => setMobileViewsSubTab('calendar')}
+                  <div
                     style={{
                       display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 5,
-                      padding: '4px 14px',
-                      borderRadius: 7,
-                      background:
-                        mobileViewsSubTab === 'calendar' ? 'var(--pill-active-bg)' : 'transparent',
-                      color:
-                        mobileViewsSubTab === 'calendar'
-                          ? 'var(--pill-active-text)'
-                          : 'var(--text-secondary)',
-                      fontWeight: mobileViewsSubTab === 'calendar' ? 600 : 500,
-                      fontSize: 12.5,
+                      padding: 2,
+                      borderRadius: 9,
+                      background: 'var(--bg-panel)',
+                      border: '1px solid var(--border)',
                     }}
                   >
-                    <CalendarIcon size={13} />
-                    <span>日历视图</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMobileViewsSubTab('quadrant')}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 5,
-                      padding: '4px 14px',
-                      borderRadius: 7,
-                      background:
-                        mobileViewsSubTab === 'quadrant' ? 'var(--pill-active-bg)' : 'transparent',
-                      color:
-                        mobileViewsSubTab === 'quadrant'
-                          ? 'var(--pill-active-text)'
-                          : 'var(--text-secondary)',
-                      fontWeight: mobileViewsSubTab === 'quadrant' ? 600 : 500,
-                      fontSize: 12.5,
-                    }}
-                  >
-                    <QuadrantIcon size={13} />
-                    <span>四象限</span>
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => setMobileViewsSubTab('calendar')}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 5,
+                        padding: '4px 14px',
+                        borderRadius: 7,
+                        background:
+                          mobileViewsSubTab === 'calendar' ? 'var(--pill-active-bg)' : 'transparent',
+                        color:
+                          mobileViewsSubTab === 'calendar'
+                            ? 'var(--pill-active-text)'
+                            : 'var(--text-secondary)',
+                        fontWeight: mobileViewsSubTab === 'calendar' ? 600 : 500,
+                        fontSize: 12.5,
+                      }}
+                    >
+                      <CalendarIcon size={13} />
+                      <span>日历视图</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMobileViewsSubTab('quadrant')}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 5,
+                        padding: '4px 14px',
+                        borderRadius: 7,
+                        background:
+                          mobileViewsSubTab === 'quadrant' ? 'var(--pill-active-bg)' : 'transparent',
+                        color:
+                          mobileViewsSubTab === 'quadrant'
+                            ? 'var(--pill-active-text)'
+                            : 'var(--text-secondary)',
+                        fontWeight: mobileViewsSubTab === 'quadrant' ? 600 : 500,
+                        fontSize: 12.5,
+                      }}
+                    >
+                      <QuadrantIcon size={13} />
+                      <span>四象限</span>
+                    </button>
+                  </div>
                 </div>
-              </div>
 
-              {mobileViewsSubTab === 'calendar' ? <CalendarView /> : <QuadrantView embedded />}
-            </div>
-          )}
+                {mobileViewsSubTab === 'calendar' ? <CalendarView /> : <QuadrantView embedded />}
+              </div>
+            )}
 
             {/* Mobile Tab 5: 设置 (Inline Settings with WebDAV 1-paste setup) */}
-            {mobileSection === 'settings' && <SettingsModal inline />}
+            {mobileSection === 'settings' && (
+              <SettingsModal inline initialTab={settingsInitialTab} />
+            )}
           </Suspense>
         </div>
 
@@ -1139,7 +706,7 @@ const DeskTagShell: React.FC = () => {
         )}
         {mobileSection !== 'settings' && showSettings && (
           <Suspense fallback={null}>
-            <SettingsModal />
+            <SettingsModal initialTab={settingsInitialTab} />
           </Suspense>
         )}
         {toastMessage && <div className="desktag-toast">{toastMessage}</div>}
@@ -1162,17 +729,17 @@ const DeskTagShell: React.FC = () => {
     <div
       className={`desktag-shell ${dockDirectionClass}${isCollapsedTabsOnly ? ' is-collapsed' : ''}`}
     >
-      <style>{DT_VIEW_STYLES}</style>
-
       {/* Protruding Folder-Style Side Tab Rail */}
       <SideTabRail />
 
       {/* Main Rounded Panel Card (hidden smoothly when collapsed to protruding tabs only) */}
       {!isCollapsedTabsOnly && (
         <main className="desktag-panel-card">
-          <PanelHeader />
+          <PanelHeader onOpenSettingsAbout={handleOpenSettingsAbout} />
 
           <div className="desktag-panel-body">
+            {updateBannerNode}
+
             <Suspense fallback={null}>
               {showQuadrant ? (
                 <QuadrantView />
@@ -1196,7 +763,7 @@ const DeskTagShell: React.FC = () => {
       <ListManagerModal />
       {showSettings && (
         <Suspense fallback={null}>
-          <SettingsModal />
+          <SettingsModal initialTab={settingsInitialTab} />
         </Suspense>
       )}
       {(showSearch || showVoiceModal) && (
@@ -1210,9 +777,12 @@ const DeskTagShell: React.FC = () => {
 };
 
 export default function App() {
+  const route = useMemo(() => parseWindowRoute(), []);
   return (
-    <DeskTagProvider>
-      <DeskTagShell />
-    </DeskTagProvider>
+    <ErrorBoundary route={route.kind}>
+      <DeskTagProvider>
+        <DeskTagShell />
+      </DeskTagProvider>
+    </ErrorBoundary>
   );
 }

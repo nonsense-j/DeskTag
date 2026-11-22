@@ -67,6 +67,7 @@ function sortDayTodos(todos: TodoItem[]): TodoItem[] {
 export const CalendarView: React.FC<CalendarViewProps> = ({ standalone = false }) => {
   const {
     data,
+    platform,
     activeTodos,
     activeLists,
     isMobileLayout,
@@ -76,6 +77,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ standalone = false }
     toggleTodo,
     showToast,
   } = useDeskTagStore();
+
+  const isWindowsOpaqueStandalone =
+    standalone && isTauriRuntime() && platform.platform === 'windows';
 
   const [mode, setMode] = useState<CalendarMode>(isMobileLayout ? 'month' : 'week');
   const [anchorDate, setAnchorDate] = useState<Date>(() => new Date());
@@ -100,7 +104,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ standalone = false }
   const allTags = useMemo(() => {
     const set = new Set<string>();
     for (const t of activeTodos) {
-      for (const tag of t.tags) set.add(tag);
+      for (const tag of t.tags ?? []) set.add(tag);
     }
     return Array.from(set).sort();
   }, [activeTodos]);
@@ -116,7 +120,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ standalone = false }
         }
       }
       if (filterPriority !== 'all' && t.priority !== filterPriority) return false;
-      if (filterTag !== 'all' && !t.tags.includes(filterTag)) return false;
+      if (filterTag !== 'all' && !(t.tags ?? []).includes(filterTag)) return false;
       return true;
     });
   }, [activeTodos, showCompleted, filterListId, filterPriority, filterTag]);
@@ -361,9 +365,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ standalone = false }
         minHeight: 0,
         background: 'var(--bg-panel)',
         color: 'var(--text-primary)',
-        borderRadius: standalone ? 12 : 0,
+        borderRadius: standalone && !isWindowsOpaqueStandalone ? 12 : 0,
         overflow: 'hidden',
-        border: standalone ? '1px solid var(--border)' : 'none',
+        border: standalone && !isWindowsOpaqueStandalone ? '1px solid var(--border)' : 'none',
       }}
     >
       {/* Standalone Desktop Window Titlebar */}
@@ -1375,9 +1379,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ standalone = false }
                       }}
                     >
                       {renderTodoRow(todo, dateKey, false)}
-                      {todo.tags.length > 0 && (
+                      {(todo.tags?.length ?? 0) > 0 && (
                         <div style={{ display: 'flex', gap: 5, paddingLeft: 24, marginTop: 4, flexWrap: 'wrap' }}>
-                          {todo.tags.map((tag) => (
+                          {(todo.tags ?? []).map((tag) => (
                             <span
                               key={tag}
                               style={{

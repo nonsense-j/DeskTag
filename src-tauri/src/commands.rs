@@ -5,7 +5,8 @@ use crate::models::{
     AppData, AppStateBundle, AttachmentRef, BackupOptions, BackupResult, DeviceSettings, DockMode,
     DockState, ExportDocumentRequest, ExportDocumentResult, ImportBackupResult, NotificationItem,
     PlatformInfo, SaveAttachmentInput, StorageInfo, SyncExecutionResult, SyncPreview,
-    WebDavConfigInput, WebDavConfigView, WebDavStatusView, WebDavTestResult,
+    UpdateCheckResult, UpdateInstallResult, WebDavConfigInput, WebDavConfigView, WebDavStatusView,
+    WebDavTestResult,
 };
 use crate::AppState;
 
@@ -33,8 +34,7 @@ pub fn save_app_data(
     state: State<'_, AppState>,
     data: AppData,
 ) -> Result<(), String> {
-    state.storage.save_app_data(data)?;
-    let persisted = state.storage.load_app_data();
+    let persisted = state.storage.save_app_data_and_return(data)?;
     let _ = app.emit("desktag://data-updated", &persisted);
 
     let cfg = state.storage.load_webdav_config();
@@ -145,17 +145,31 @@ pub fn reset_panel_layout(
 }
 
 #[tauri::command]
-pub fn open_calendar_window(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
-    state.dock.open_calendar_window(&app)
+pub async fn open_calendar_window(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let dock = state.dock.clone();
+    tauri::async_runtime::spawn_blocking(move || dock.open_calendar_window(&app))
+        .await
+        .map_err(|e| format!("failed to join calendar window task: {e}"))?
 }
 
 #[tauri::command]
-pub fn open_note_window(
+pub async fn open_note_window(
     app: AppHandle,
     state: State<'_, AppState>,
     note_id: String,
 ) -> Result<(), String> {
-    state.dock.open_note_window(&app, &note_id)
+    let dock = state.dock.clone();
+    tauri::async_runtime::spawn_blocking(move || dock.open_note_window(&app, &note_id))
+        .await
+        .map_err(|e| format!("failed to join note window task: {e}"))?
+}
+
+#[tauri::command]
+pub fn quit_app(app: AppHandle) {
+    app.exit(0);
 }
 
 // ---------------------------------------------------------------------------
@@ -239,7 +253,9 @@ pub fn change_storage_dir(
     state: State<'_, AppState>,
     new_dir: String,
 ) -> Result<StorageInfo, String> {
-    state.storage.change_storage_dir(&new_dir)
+    let info = state.storage.change_storage_dir(&new_dir)?;
+    state.webdav.notify_config_changed();
+    Ok(info)
 }
 
 #[tauri::command]
@@ -405,6 +421,26 @@ fn emit_sync_result(app: &AppHandle, res: &SyncExecutionResult) {
             let _ = app.emit("desktag://data-updated", data);
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// App Updater (GitHub Releases)
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn check_for_update(
+    state: State<'_, AppState>,
+    force: Option<bool>,
+) -> Result<UpdateCheckResult, String> {
+    crate::updater::check_for_update(&state.storage, force.unwrap_or(false)).await
+}
+
+#[tauri::command]
+pub async fn download_and_install_update(
+    app: AppHandle,
+    update: UpdateCheckResult,
+) -> Result<UpdateInstallResult, String> {
+    crate::updater::download_and_install_update(&app, update).await
 }
 
 // ---------------------------------------------------------------------------

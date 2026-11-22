@@ -579,6 +579,12 @@ pub struct DeviceSettings {
     pub global_shortcut_quick_add: String,
     #[serde(default)]
     pub custom_data_dir: Option<String>,
+    #[serde(default = "default_true")]
+    pub auto_check_updates: bool,
+    #[serde(default)]
+    pub skipped_update_version: Option<String>,
+    #[serde(default)]
+    pub last_update_check_at: Option<String>,
 }
 
 fn default_panel_width() -> u32 {
@@ -619,6 +625,9 @@ impl Default for DeviceSettings {
             global_shortcut_toggle: default_shortcut_toggle(),
             global_shortcut_quick_add: default_shortcut_quick_add(),
             custom_data_dir: None,
+            auto_check_updates: true,
+            skipped_update_version: None,
+            last_update_check_at: None,
         }
     }
 }
@@ -1022,4 +1031,72 @@ pub struct SaveAttachmentInput {
     #[serde(default)]
     pub kind: AttachmentKind,
     pub base64_data: String,
+}
+
+// ---------------------------------------------------------------------------
+// App Update Checker & Installer Contracts
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InstallKind {
+    WindowsStandalone,
+    WindowsNsis,
+    WindowsMsi,
+    MacosArm64,
+    MacosX64,
+    AndroidArm64,
+    Linux,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateAsset {
+    pub name: String,
+    pub url: String,
+    #[serde(default)]
+    pub size: Option<u64>,
+    #[serde(default)]
+    pub sha256: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateCheckResult {
+    pub current_version: String,
+    pub latest_version: String,
+    pub has_update: bool,
+    pub skipped: bool,
+    pub release_name: String,
+    pub release_notes: String,
+    #[serde(default)]
+    pub published_at: Option<String>,
+    pub release_url: String,
+    pub install_kind: InstallKind,
+    #[serde(default)]
+    pub recommended_asset: Option<UpdateAsset>,
+    pub checked_at: String,
+    pub source: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateDownloadProgress {
+    pub stage: String,
+    pub downloaded_bytes: u64,
+    #[serde(default)]
+    pub total_bytes: Option<u64>,
+    #[serde(default)]
+    pub percent: Option<u8>,
+    #[serde(default)]
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateInstallResult {
+    pub action: String,
+    #[serde(default)]
+    pub path: Option<String>,
+    pub message: String,
 }

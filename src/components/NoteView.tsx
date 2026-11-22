@@ -417,6 +417,7 @@ const AutoTextarea: React.FC<{
 export const NoteView: React.FC<NoteViewProps> = ({ noteId, standalone = false }) => {
   const {
     data,
+    platform,
     activeNotes,
     activeTodos,
     activeNoteGroups,
@@ -810,99 +811,228 @@ export const NoteView: React.FC<NoteViewProps> = ({ noteId, standalone = false }
     }
   };
 
-  if (!note) {
-    return (
+  const isWindowsStandalone = standalone && platform.platform === 'windows';
+  const standaloneShellStyle: React.CSSProperties = {
+    display: 'flex',
+    flexDirection: 'column',
+    width: '100%',
+    height: '100%',
+    minHeight: 0,
+    background: 'var(--bg-panel)',
+    color: 'var(--text-primary)',
+    position: 'relative',
+    borderRadius: standalone && !isWindowsStandalone ? 12 : 0,
+    overflow: 'hidden',
+    border: standalone && !isWindowsStandalone ? '1px solid var(--border)' : 'none',
+  };
+
+  const renderStandaloneTitlebar = (titleText: string, kind: 'normal' | 'timeline' = 'normal') => (
+    <header
+      data-tauri-drag-region
+      style={{
+        height: 38,
+        flexShrink: 0,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '0 8px 0 14px',
+        background: 'var(--bg-header)',
+        borderBottom: '1px solid var(--border)',
+        userSelect: 'none',
+      }}
+    >
       <div
+        data-tauri-drag-region
         style={{
-          flex: 1,
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'center',
-          color: 'var(--text-muted)',
-          fontSize: 13.5,
-          padding: 24,
+          gap: 7,
+          fontSize: 13,
+          fontWeight: 600,
+          minWidth: 0,
         }}
       >
-        未找到该便签（可能已被删除）。
+        {kind === 'timeline' ? (
+          <TimelineIcon size={15} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+        ) : (
+          <NoteIcon size={15} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+        )}
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {titleText}
+        </span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+        <button
+          type="button"
+          title={standalonePinned ? '取消置顶' : '窗口置顶'}
+          onClick={() => void handleToggleStandalonePin()}
+          style={{
+            width: 26,
+            height: 26,
+            border: 'none',
+            borderRadius: 6,
+            background: standalonePinned ? 'var(--accent-soft)' : 'transparent',
+            color: standalonePinned ? 'var(--accent-soft-text)' : 'var(--text-secondary)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+          }}
+        >
+          <PinIcon size={14} />
+        </button>
+        <button
+          type="button"
+          title="最小化"
+          onClick={() => void handleStandaloneMinimize()}
+          style={{
+            width: 26,
+            height: 26,
+            border: 'none',
+            borderRadius: 6,
+            background: 'transparent',
+            color: 'var(--text-secondary)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+          }}
+        >
+          <MinimizeIcon size={14} />
+        </button>
+        <button
+          type="button"
+          title="关闭窗口"
+          onClick={() => void handleStandaloneClose()}
+          style={{
+            width: 26,
+            height: 26,
+            border: 'none',
+            borderRadius: 6,
+            background: 'transparent',
+            color: 'var(--text-secondary)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+          }}
+        >
+          <CloseIcon size={14} />
+        </button>
+      </div>
+    </header>
+  );
+
+  if (!note) {
+    return (
+      <div className="dt-note-view" style={standaloneShellStyle}>
+        {standalone && renderStandaloneTitlebar('独立便签')}
+        <div
+          style={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 12,
+            color: 'var(--text-muted)',
+            fontSize: 13.5,
+            padding: 24,
+          }}
+        >
+          <span>未找到该便签（可能已被删除）。</span>
+          {standalone && (
+            <button
+              type="button"
+              className="dt-btn dt-btn-ghost"
+              onClick={() => void handleStandaloneClose()}
+            >
+              关闭窗口
+            </button>
+          )}
+        </div>
       </div>
     );
   }
 
   if (isGroupLocked && noteGroup) {
     return (
-      <div
-        style={{
-          flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 12,
-          padding: 28,
-          background: 'var(--bg-panel)',
-        }}
-      >
+      <div className="dt-note-view" style={standaloneShellStyle}>
+        {standalone && renderStandaloneTitlebar(note.title || '独立便签', note.kind)}
         <div
           style={{
-            width: 48,
-            height: 48,
-            borderRadius: '50%',
-            background: 'var(--accent-soft)',
-            color: 'var(--accent)',
+            flex: 1,
             display: 'flex',
+            flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
+            gap: 12,
+            padding: 28,
+            background: 'var(--bg-panel)',
           }}
         >
-          <LockIcon size={22} />
-        </div>
-        <div style={{ fontWeight: 600, fontSize: 15 }}>分组「{noteGroup.name}」已启用隐私锁</div>
-        <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>
-          输入 4–6 位密码后即可查看和编辑「{note.title || '未命名便签'}」
-        </div>
-        <form
-          onSubmit={(e) => void handleUnlockGroup(e)}
-          style={{ display: 'flex', gap: 8, marginTop: 4 }}
-        >
-          <input
-            type="password"
-            inputMode="numeric"
-            maxLength={6}
-            value={pinInput}
-            onChange={(e) => {
-              setPinInput(e.target.value);
-              setPinError(null);
-            }}
-            placeholder="输入分组 PIN"
+          <div
             style={{
-              width: 150,
-              padding: '7px 10px',
-              borderRadius: 9,
-              border: '1px solid var(--border)',
-              background: 'var(--bg-input)',
-              color: 'var(--text-primary)',
-              fontSize: 14,
-              textAlign: 'center',
-              letterSpacing: '0.2em',
-            }}
-          />
-          <button
-            type="submit"
-            style={{
-              padding: '7px 14px',
-              borderRadius: 9,
-              border: 'none',
-              background: 'var(--accent)',
-              color: 'var(--accent-text)',
-              fontWeight: 600,
-              fontSize: 13,
-              cursor: 'pointer',
+              width: 48,
+              height: 48,
+              borderRadius: '50%',
+              background: 'var(--accent-soft)',
+              color: 'var(--accent)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
             }}
           >
-            解锁
-          </button>
-        </form>
-        {pinError && <div style={{ fontSize: 12, color: 'var(--danger)' }}>{pinError}</div>}
+            <LockIcon size={22} />
+          </div>
+          <div style={{ fontWeight: 600, fontSize: 15 }}>分组「{noteGroup.name}」已启用隐私锁</div>
+          <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>
+            输入 4–6 位密码后即可查看和编辑「{note.title || '未命名便签'}」
+          </div>
+          <form
+            onSubmit={(e) => void handleUnlockGroup(e)}
+            style={{ display: 'flex', gap: 8, marginTop: 4 }}
+          >
+            <input
+              type="password"
+              inputMode="numeric"
+              maxLength={6}
+              value={pinInput}
+              onChange={(e) => {
+                setPinInput(e.target.value);
+                setPinError(null);
+              }}
+              placeholder="输入分组 PIN"
+              style={{
+                width: 150,
+                padding: '7px 10px',
+                borderRadius: 9,
+                border: '1px solid var(--border)',
+                background: 'var(--bg-input)',
+                color: 'var(--text-primary)',
+                fontSize: 14,
+                textAlign: 'center',
+                letterSpacing: '0.2em',
+              }}
+            />
+            <button
+              type="submit"
+              style={{
+                padding: '7px 14px',
+                borderRadius: 9,
+                border: 'none',
+                background: 'var(--accent)',
+                color: 'var(--accent-text)',
+                fontWeight: 600,
+                fontSize: 13,
+                cursor: 'pointer',
+              }}
+            >
+              解锁
+            </button>
+          </form>
+          {pinError && <div style={{ fontSize: 12, color: 'var(--danger)' }}>{pinError}</div>}
+        </div>
       </div>
     );
   }
@@ -917,22 +1047,7 @@ export const NoteView: React.FC<NoteViewProps> = ({ noteId, standalone = false }
   const noteOtherAttachments = note.attachments.filter((a) => a.kind !== 'image');
 
   return (
-    <div
-      className="dt-note-view"
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        width: '100%',
-        height: '100%',
-        minHeight: 0,
-        background: 'var(--bg-panel)',
-        color: 'var(--text-primary)',
-        position: 'relative',
-        borderRadius: standalone ? 12 : 0,
-        overflow: 'hidden',
-        border: standalone ? '1px solid var(--border)' : 'none',
-      }}
-    >
+    <div className="dt-note-view" style={standaloneShellStyle}>
       {/* Hidden file inputs */}
       <input
         ref={imageInputRef}
@@ -967,93 +1082,7 @@ export const NoteView: React.FC<NoteViewProps> = ({ noteId, standalone = false }
       />
 
       {/* Standalone Window Titlebar */}
-      {standalone && (
-        <header
-          data-tauri-drag-region
-          style={{
-            height: 38,
-            flexShrink: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '0 8px 0 14px',
-            background: 'var(--bg-header)',
-            borderBottom: '1px solid var(--border)',
-            userSelect: 'none',
-          }}
-        >
-          <div
-            data-tauri-drag-region
-            style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 600 }}
-          >
-            {note.kind === 'timeline' ? (
-              <TimelineIcon size={15} style={{ color: 'var(--accent)' }} />
-            ) : (
-              <NoteIcon size={15} style={{ color: 'var(--accent)' }} />
-            )}
-            <span>{note.title || '独立便签'}</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <button
-              type="button"
-              title={standalonePinned ? '取消置顶' : '窗口置顶'}
-              onClick={() => void handleToggleStandalonePin()}
-              style={{
-                width: 26,
-                height: 26,
-                border: 'none',
-                borderRadius: 6,
-                background: standalonePinned ? 'var(--accent-soft)' : 'transparent',
-                color: standalonePinned ? 'var(--accent-soft-text)' : 'var(--text-secondary)',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-              }}
-            >
-              <PinIcon size={14} />
-            </button>
-            <button
-              type="button"
-              title="最小化"
-              onClick={() => void handleStandaloneMinimize()}
-              style={{
-                width: 26,
-                height: 26,
-                border: 'none',
-                borderRadius: 6,
-                background: 'transparent',
-                color: 'var(--text-secondary)',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-              }}
-            >
-              <MinimizeIcon size={14} />
-            </button>
-            <button
-              type="button"
-              title="关闭窗口"
-              onClick={() => void handleStandaloneClose()}
-              style={{
-                width: 26,
-                height: 26,
-                border: 'none',
-                borderRadius: 6,
-                background: 'transparent',
-                color: 'var(--text-secondary)',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-              }}
-            >
-              <CloseIcon size={14} />
-            </button>
-          </div>
-        </header>
-      )}
+      {standalone && renderStandaloneTitlebar(note.title || '独立便签', note.kind)}
 
       {/* Note Sub-header */}
       <div
@@ -1221,7 +1250,13 @@ export const NoteView: React.FC<NoteViewProps> = ({ noteId, standalone = false }
             <button
               type="button"
               title="独立窗口打开"
-              onClick={() => void openNoteWindow(note.id)}
+              onClick={() => {
+                void openNoteWindow(note.id).catch((err) => {
+                  showToast(
+                    `打开独立便签失败：${err instanceof Error ? err.message : String(err)}`,
+                  );
+                });
+              }}
               style={{
                 width: 28,
                 height: 28,
@@ -1242,9 +1277,11 @@ export const NoteView: React.FC<NoteViewProps> = ({ noteId, standalone = false }
               type="button"
               title="导出当前便签 (Markdown)"
               onClick={() =>
-                void exportDeskTagDocument(data, 'markdown', { noteId: note.id }).then((r) =>
-                  showToast(r.message),
-                )
+                void exportDeskTagDocument(data, 'markdown', { noteId: note.id })
+                  .then((r) => showToast(r.message))
+                  .catch((err) => {
+                    showToast(`导出失败：${err instanceof Error ? err.message : String(err)}`);
+                  })
               }
               style={{
                 width: 28,

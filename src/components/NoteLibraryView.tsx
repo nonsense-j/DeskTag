@@ -881,7 +881,13 @@ export const NoteLibraryView: React.FC<NoteLibraryViewProps> = ({ onOpenNote }) 
                         <button
                           type="button"
                           title="独立窗口打开"
-                          onClick={() => void openNoteWindow(note.id)}
+                          onClick={() => {
+                            void openNoteWindow(note.id).catch((err) => {
+                              showToast(
+                                `打开独立便签失败：${err instanceof Error ? err.message : String(err)}`,
+                              );
+                            });
+                          }}
                           style={{
                             width: 26,
                             height: 26,

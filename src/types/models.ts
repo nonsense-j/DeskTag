@@ -218,6 +218,9 @@ export interface DeviceSettings {
   globalShortcutToggle: string;
   globalShortcutQuickAdd: string;
   customDataDir: string | null;
+  autoCheckUpdates: boolean;
+  skippedUpdateVersion: string | null;
+  lastUpdateCheckAt: string | null;
 }
 
 export interface AppData {
@@ -412,6 +415,59 @@ export interface SaveAttachmentInput {
   base64Data: string;
 }
 
+export type InstallKind =
+  | 'windows_standalone'
+  | 'windows_nsis'
+  | 'windows_msi'
+  | 'macos_arm64'
+  | 'macos_x64'
+  | 'android_arm64'
+  | 'linux';
+
+export interface UpdateAsset {
+  name: string;
+  url: string;
+  size: number | null;
+  sha256: string | null;
+}
+
+export interface UpdateCheckResult {
+  currentVersion: string;
+  latestVersion: string;
+  hasUpdate: boolean;
+  skipped: boolean;
+  releaseName: string;
+  releaseNotes: string;
+  publishedAt: string | null;
+  releaseUrl: string;
+  installKind: InstallKind;
+  recommendedAsset: UpdateAsset | null;
+  checkedAt: string;
+  source: string;
+}
+
+export type UpdateDownloadStage = 'downloading' | 'verifying' | 'installing' | 'ready' | 'error';
+
+export interface UpdateDownloadProgress {
+  stage: UpdateDownloadStage;
+  downloadedBytes: number;
+  totalBytes: number | null;
+  percent: number | null;
+  message: string | null;
+}
+
+export type UpdateInstallAction =
+  | 'relaunched'
+  | 'installer_launched'
+  | 'revealed_in_folder'
+  | 'opened_url';
+
+export interface UpdateInstallResult {
+  action: UpdateInstallAction;
+  path: string | null;
+  message: string;
+}
+
 export function createDefaultSyncedSettings(): SyncedSettings {
   return {
     skinId: 'morning-linen',
@@ -455,6 +511,9 @@ export function createDefaultDeviceSettings(): DeviceSettings {
     globalShortcutToggle: 'Alt+Shift+D',
     globalShortcutQuickAdd: 'Alt+Shift+N',
     customDataDir: null,
+    autoCheckUpdates: true,
+    skippedUpdateVersion: null,
+    lastUpdateCheckAt: null,
   };
 }
 
