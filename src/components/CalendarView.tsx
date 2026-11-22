@@ -366,7 +366,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ standalone = false }
         border: standalone ? '1px solid var(--border)' : 'none',
       }}
     >
-      {/* Standalone Desktop Window Titlebar (matches calendar.webp) */}
+      {/* Standalone Desktop Window Titlebar */}
       {standalone && (
         <header
           data-tauri-drag-region
@@ -1020,7 +1020,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ standalone = false }
                       cursor: 'pointer',
                     }}
                   >
-                    {/* Solar + Lunar Header (matches calendar.webp: "16 初八" .. "19 十一") */}
+                    {/* Solar + Lunar Date Header */}
                     <div
                       style={{
                         display: 'flex',

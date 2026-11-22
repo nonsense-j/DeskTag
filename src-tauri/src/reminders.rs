@@ -557,7 +557,7 @@ mod tests {
 
     #[test]
     fn test_recurring_daily_and_weekly_multi_times() {
-        // Friday 2026-11-13 08:30 (matches Daibantie reminder-cycle.webp example!)
+        // Friday 2026-11-13 08:30: weekly Mon/Fri recurring trigger schedule
         let rule = ReminderRule {
             enabled: true,
             mode: ReminderMode::Recurring,

@@ -88,7 +88,7 @@ function detectBrowserPlatform(): PlatformInfo {
     platform,
     isDesktop: !isMobile,
     isMobile,
-    appVersion: '1.0.0',
+    appVersion: '1.0.1',
     supportsEdgeDock: !isMobile,
     supportsGlobalShortcut: !isMobile,
     supportsTray: !isMobile,

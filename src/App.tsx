@@ -24,7 +24,7 @@ const SettingsModal = lazy(() => import('./components/SettingsModal'));
 
 /**
  * Scoped styles for DeskTag's view components (SettingsModal, WebDavSyncCard,
- * CalendarView, QuadrantView) harmonized 100% with the 11 Daibantie CSS tokens.
+ * CalendarView, QuadrantView) harmonized with DeskTag's 11 built-in theme tokens.
  */
 const DT_VIEW_STYLES = `
 .dt-settings-card {
@@ -765,7 +765,7 @@ const DeskTagShell: React.FC = () => {
           fontSize: 13,
         }}
       >
-        正在加载 DeskTag 待办贴…
+        正在加载 DeskTag…
       </div>
     );
   }

@@ -3,14 +3,14 @@ import { useDeskTagStore } from '../store/useDeskTagStore';
 import { CloseIcon, PinIcon, PlusIcon, TrashIcon } from './Icons';
 
 const LIST_COLOR_PALETTE = [
-  '#e8734b',
-  '#d4a741',
-  '#699863',
-  '#6baed9',
-  '#cf8f91',
-  '#a9744f',
-  '#7e8ec0',
-  '#8b7355',
+  '#df6542',
+  '#c6922d',
+  '#4e7e57',
+  '#4a8fbc',
+  '#c07a84',
+  '#956242',
+  '#6f7fa8',
+  '#7d6448',
 ];
 
 export const ListManagerModal: React.FC = () => {

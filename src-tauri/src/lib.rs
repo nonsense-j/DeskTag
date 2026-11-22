@@ -120,7 +120,7 @@ fn setup_system_tray(app: &AppHandle) -> tauri::Result<()> {
     )?;
 
     let mut tray_builder = TrayIconBuilder::with_id("desktag-tray")
-        .tooltip("DeskTag — 待办贴")
+        .tooltip("DeskTag — 桌面贴边待办与便签")
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app_handle, event| {

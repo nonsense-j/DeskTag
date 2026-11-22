@@ -278,7 +278,7 @@ pub struct TodoList {
 }
 
 fn default_list_color() -> String {
-    "#e8734a".to_string()
+    "#df6542".to_string()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -472,7 +472,7 @@ pub struct SyncedSettings {
 }
 
 fn default_skin_id() -> String {
-    "warm-order".to_string()
+    "morning-linen".to_string()
 }
 fn default_opacity() -> f64 {
     1.0

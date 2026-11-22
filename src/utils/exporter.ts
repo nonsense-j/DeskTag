@@ -216,27 +216,27 @@ export function buildHtmlExport(data: AppData, options: ExportBuilderOptions = {
 <meta charset="UTF-8" />
 <title>DeskTag 导出 - ${today}</title>
 <style>
-  body { font-family: 'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif; background:#fcfaf8; color:#2f2b27; max-width:820px; margin:28px auto; padding:0 20px; line-height:1.65; }
-  h1 { font-size:22px; border-bottom:1px solid #e3e3d8; padding-bottom:10px; color:#2f2b27; }
-  h2 { font-size:16px; margin-top:24px; color:#cf5a32; }
+  body { font-family: 'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif; background:#fcfbf7; color:#2c2824; max-width:820px; margin:28px auto; padding:0 20px; line-height:1.65; }
+  h1 { font-size:22px; border-bottom:1px solid #e2ded2; padding-bottom:10px; color:#2c2824; }
+  h2 { font-size:16px; margin-top:24px; color:#b54524; }
   h3 { font-size:15px; margin:0 0 8px; }
-  .todo, .note-card { background:#fff; border:1px solid #e3e3d8; border-radius:10px; padding:12px 14px; margin-bottom:10px; }
+  .todo, .note-card { background:#fff; border:1px solid #e2ded2; border-radius:10px; padding:12px 14px; margin-bottom:10px; }
   .todo.done .title, .subtasks li.done { color:#a09a92; }
   .todo-head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-  .check { color:#e8734b; font-weight:700; }
+  .check { color:#df6542; font-weight:700; }
   .title { font-weight:600; }
-  .chip { background:#f6efe9; border:1px solid #e8d8cd; color:#7a5d4e; border-radius:999px; font-size:12px; padding:1px 8px; margin-left:4px; }
+  .chip { background:#f4ede6; border:1px solid #e4d5c8; color:#715445; border-radius:999px; font-size:12px; padding:1px 8px; margin-left:4px; }
   .note-text, .note-body { font-size:13px; color:#5a544d; margin-top:6px; }
   .subtasks { margin:8px 0 0 18px; padding:0; list-style:none; font-size:13px; }
   .subtasks li { margin-bottom:4px; }
-  .tl-item { border-left:2px solid #eab49f; padding-left:10px; margin-bottom:10px; }
+  .tl-item { border-left:2px solid #e8ad99; padding-left:10px; margin-bottom:10px; }
   .tl-time { font-size:12px; color:#8d867e; }
-  .muted { color:#999289; font-size:13px; }
+  .muted { color:#928b82; font-size:13px; }
   @media print { body { background:#fff; margin:0; max-width:none; } .todo, .note-card { break-inside:avoid; } }
 </style>
 </head>
 <body>
-  <h1>DeskTag 待办贴导出 · ${today}</h1>
+  <h1>DeskTag 导出 · ${today}</h1>
   ${todoSection}
   ${noteSection}
 </body>

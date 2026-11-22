@@ -414,7 +414,7 @@ export interface SaveAttachmentInput {
 
 export function createDefaultSyncedSettings(): SyncedSettings {
   return {
-    skinId: 'warm-order',
+    skinId: 'morning-linen',
     opacity: 1.0,
     fontFamily: 'system',
     bodyFontSize: 14,

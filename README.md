@@ -1,9 +1,9 @@
-# DeskTag · 待办贴开源复刻
+# DeskTag
 
-> 轻量、跨平台、支持端到端加密 WebDAV 云同步的桌面贴边待办与便签工具。  
-> **Lightweight, cross-platform edge-docked sticky-note & todo companion with E2EE WebDAV cloud sync.**
+> 轻量、跨平台、支持端到端加密 WebDAV 云同步的独立开源桌面贴边待办与便签工具。  
+> **An independent, open-source, lightweight cross-platform edge-docked sticky-note & todo companion with E2EE WebDAV cloud sync.**
 
-DeskTag 是「待办贴 (Daibantie)」的开源跨平台复刻版，基于 **Tauri v2 + Rust + React 19 + TypeScript** 构建，面向 **Windows、macOS (Apple Silicon & Intel) 与 Android**，兼顾极低内存占用、贴边无打扰交互与安全可控的自托管云同步。
+DeskTag 基于 **Tauri v2 + Rust + React 19 + TypeScript** 构建，面向 **Windows、macOS (Apple Silicon & Intel) 与 Android**，兼顾极低内存占用、贴边无打扰交互与安全可控的自托管云同步。
 
 ---
 
@@ -18,21 +18,21 @@ DeskTag 是「待办贴 (Daibantie)」的开源跨平台复刻版，基于 **Tau
 - **子任务与进度胶囊**：每个待办支持多级子任务、独立子任务备注与图片附件，列表内实时展示可视化进度胶囊（如 `2/5`）。
 - **自然语言识别 (NL Parser) & 批量粘贴**：输入如「明天下午3点 评审方案 紧急」自动提取日期、时间与优先级；支持多行文本一键批量创建待办。
 - **自定义清单**：自由创建、重命名、配色、排序清单，并一键固定到外露侧边页签栏。
-- **标签、筛选与全局搜索**：支持优先级（高/中/低）、标签、排序、归档与跨待办/便签快速检索。
+- **标签、筛选与全局搜索**：支持优先级（高/中/低）、标签、排序、归档与跨待办/便签快速检索（`Ctrl+K`）。
 
 ### 3. 普通与时间轴便签 (Normal & Timeline Notes)
 - **双模式便签**：支持常规结构化便签（Normal）与按时间倒序记录的流水账/日志便签（Timeline）。
 - **结构化编辑体验**：支持可折叠标题、自动目录大纲（Outline）、Markdown 表格、图片/文件/音频附件，以及通过 `@` 双向关联待办与便签。
-- **独立便签窗与隐私锁**：支持将常用便签弹出为独立窗口查看，支持单篇便签隐私加锁保护。
+- **独立便签窗与隐私锁**：支持将常用便签弹出为独立窗口查看，支持单篇便签分组隐私加锁保护。
 
 ### 4. 日历、四象限与智能提醒 (Calendar, Quadrants & Reminders)
 - **独立日历窗口**：内置完整中国**农历、传统节日与二十四节气**，直观查看每日待办安排。
 - **四象限视图 (Eisenhower Matrix)**：按「重要且紧急 / 重要不紧急 / 紧急不重要 / 不重要不紧急」高效分流任务。
 - **标准与重复提醒 + 免打扰时段**：支持单次及按日/周/月/年/自定义周期的重复提醒、系统原生通知与通知中心气泡，并可设置免打扰（DND）静默时段。
 
-### 5. 11 款内置皮肤与排版定制 (Skins & Typography)
-- 内置 **11 款精选皮肤**（10 款浅色 + 1 款深色）：
-  `暖白秩序` · `纸感陪伴` · `现代暖调` · `抹茶清宁` · `蜜糖杏` · `焦糖拿铁` · `玫瑰晨雾` · `奶油栗` · `海盐蓝` · `极简清爽` · `深色治愈`
+### 5. 11 款原创内置主题与排版定制 (Themes & Typography)
+- 内置 **11 款原创主题皮肤**（10 款浅色 + 1 款深色）：
+  `晨光亚麻` · `牛皮手账` · `晴云杏桃` · `竹影青露` · `琥珀乌龙` · `烘焙摩卡` · `暮色樱云` · `银杏微光` · `冰川海雾` · `素墨极简` · `暗夜余烬`
 - 支持面板透明度调节、字号缩放与 6 套中英文字体方案（系统默认 / 微软雅黑 / 苹方·思源黑体 / 温润宋体 / 手写楷体 / 等宽清晰）。
 
 ### 6. 本地备份与多格式导出 (Local Backup & Export)
@@ -43,7 +43,7 @@ DeskTag 是「待办贴 (Daibantie)」的开源跨平台复刻版，基于 **Tau
 
 ## 端到端加密 WebDAV 云同步 (E2EE WebDAV Cloud Sync)
 
-借鉴 [Magpie](https://github.com/yetone/magpie) 的高可靠 WebDAV 同步设计，DeskTag 内置零依赖 Rust 同步引擎，数据主权完全归你所有：
+借鉴 [Magpie](https://github.com/yetone/magpie) 的高可靠 WebDAV 同步设计思路，DeskTag 内置零依赖 Rust 同步引擎，数据主权完全归你所有：
 
 - **端到端加密 (E2EE)**：采用 **AES-256-GCM** 认证加密 + **PBKDF2-SHA256**（默认 `600,000` 次迭代，每次封包生成独立 16 字节随机 Salt 与 12 字节随机 Nonce），远端仅存储密文封包 `desktag.desktag-backup`，云盘服务商无法读取任何明文内容。
 - **逐项三方合并 + 删除墓碑 (3-Way Merge with Tombstones)**：基于本地、远端与上次同步基线逐条比对合并待办、清单、便签与提醒，配合墓碑机制避免「已删内容复活」或多设备并发编辑互相覆盖；内建跨进程文件锁 `sync.lock` 与同步前自动轮转快照。
@@ -109,15 +109,22 @@ pnpm tauri android build --apk --target aarch64
 
 ## English Overview
 
-**DeskTag** is an open-source, cross-platform recreation of **Daibantie (待办贴)** powered by **Tauri v2, Rust, React 19, and TypeScript**, targeting **Windows, macOS (Apple Silicon & Intel), and Android**.
+**DeskTag** is an independent, open-source, cross-platform edge-docked sticky-note & todo companion powered by **Tauri v2, Rust, React 19, and TypeScript**, targeting **Windows, macOS (Apple Silicon & Intel), and Android**.
 
 - **Desktop Edge Docking**: 6 docking modes (`Left / Right / Top` × `Protruding Side Tabs / Full Auto-Hide`), multi-monitor work-area clamping, system tray, and global hotkeys (`Alt+Shift+D`, `Alt+Shift+N`).
-- **Productivity Suite**: Todos with subtasks, progress pills, natural-language date/priority parsing, batch paste, custom pinned lists, Normal & Timeline notes (collapsible headings, outline, Markdown tables, attachments, `@` cross-links, privacy lock), standalone Calendar with Chinese lunar dates & solar terms, Four Quadrants (Eisenhower Matrix), standard & recurring reminders with DND quiet hours, 11 built-in skins, and local backup/export to **Word (`.docx`), PDF, HTML, Markdown, and CSV**.
-- **Magpie-Inspired E2EE WebDAV Sync**: Client-side `AES-256-GCM` + `PBKDF2-SHA256` (600,000 iterations) encryption, 3-way per-item merge with tombstones, hardened compatibility for Nutstore, 123pan, TeraCLOUD, Synology NAS, Alist/OpenList, and Nextcloud, plus Dry-Run `Preview`, one-click `UndoSync`, and `desktag-sync:...` one-paste mobile onboarding (excluding the encryption passphrase).
+- **Productivity Suite**: Todos with subtasks, progress pills, natural-language date/priority parsing, batch paste, custom pinned lists, Normal & Timeline notes (collapsible headings, outline, Markdown tables, attachments, `@` cross-links, privacy lock), standalone Calendar with Chinese lunar dates & solar terms, Four Quadrants (Eisenhower Matrix), standard & recurring reminders with DND quiet hours, 11 original built-in themes, and local backup/export to **Word (`.docx`), PDF, HTML, Markdown, and CSV**.
+- **E2EE WebDAV Sync**: Client-side `AES-256-GCM` + `PBKDF2-SHA256` (600,000 iterations) encryption, 3-way per-item merge with tombstones, hardened compatibility for Nutstore, 123pan, TeraCLOUD, Synology NAS, Alist/OpenList, and Nextcloud, plus Dry-Run `Preview`, one-click `UndoSync`, and `desktag-sync:...` one-paste mobile onboarding (excluding the encryption passphrase).
 
 ---
 
-## 致谢与许可 / Acknowledgements & License
+## 独立声明 / Independence Disclaimer
 
-- 交互形态致敬 **待办贴 (Daibantie)**；WebDAV 端到端加密与三方合并同步架构致敬 **[yetone/magpie](https://github.com/yetone/magpie)**。
-- 本项目基于开源协议发布，欢迎提交 Issue 与 Pull Request。
+DeskTag 是一个完全独立的开源项目，与任何第三方待办事项、便签或效率类商业软件均无隶属、合作或背书关系。  
+*DeskTag is an independent open-source project and is not affiliated with, endorsed by, or associated with any third-party sticky-note or todo applications.*
+
+---
+
+## 致谢与开源协议 / Acknowledgements & License
+
+- WebDAV 端到端加密与三方合并同步架构思路致敬 **[yetone/magpie](https://github.com/yetone/magpie)**（MIT License）。
+- 本项目基于 **[MIT License](./LICENSE)** 开源发布，欢迎提交 Issue 与 Pull Request。

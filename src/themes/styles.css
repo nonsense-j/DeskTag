@@ -1,50 +1,50 @@
 /* ==========================================================================
-   DeskTag (待办贴) Warm Paper Design System
-   Pixel-faithful to Daibantie across all 11 skins + Windows/macOS/Android
+   DeskTag Paper-Craft Design System
+   Harmonized across all 11 original DeskTag themes + Windows/macOS/Android
    ========================================================================== */
 
 :root {
-  --bg-panel: #fcfaf8;
-  --bg-header: #f6f5ee;
+  --bg-panel: #fcfbf7;
+  --bg-header: #f5f2ea;
   --bg-surface: #ffffff;
-  --bg-surface-hover: #f6f2eb;
+  --bg-surface-hover: #f4efe7;
   --bg-input: #ffffff;
   --bg-card: #ffffff;
-  --bg-popover: #fffefd;
-  --border: #e3e3d8;
-  --border-strong: #d2cfc2;
-  --text-primary: #2f2b27;
-  --text-secondary: #655f57;
-  --text-muted: #999289;
-  --text-completed: #aca59c;
-  --accent: #e8734b;
-  --accent-hover: #d9633c;
-  --accent-soft: #f7e4dd;
-  --accent-soft-text: #cf5a32;
-  --accent-border: #eab49f;
+  --bg-popover: #fffefb;
+  --border: #e2ded2;
+  --border-strong: #cfc9ba;
+  --text-primary: #2c2824;
+  --text-secondary: #625b53;
+  --text-muted: #928b82;
+  --text-completed: #a8a198;
+  --accent: #df6542;
+  --accent-hover: #cb5331;
+  --accent-soft: #f9e6de;
+  --accent-soft-text: #b54524;
+  --accent-border: #e8ad99;
   --accent-text: #ffffff;
-  --tab-active-bg: #e8734b;
+  --tab-active-bg: #df6542;
   --tab-active-text: #ffffff;
-  --tab-inactive-bg: #f6dfd5;
-  --tab-inactive-text: #7a4d3d;
-  --tab-inactive-hover-bg: #f1d0c2;
-  --pill-active-bg: #f7e4dd;
-  --pill-active-text: #cf5a32;
-  --priority-high: #e05552;
-  --priority-medium: #d4a741;
-  --priority-low: #699863;
-  --progress-border: #7fa6a1;
-  --progress-fill: rgba(127, 166, 161, 0.26);
-  --progress-text: #4c7570;
-  --tag-bg: #f6efe9;
-  --tag-border: #e8d8cd;
-  --tag-text: #7a5d4e;
-  --danger: #d94d4a;
-  --danger-soft: #fdeceb;
-  --success: #5b8c5a;
-  --warning: #d49a35;
-  --shadow-panel: 0 8px 28px rgba(47, 39, 31, 0.12);
-  --shadow-popover: 0 14px 38px rgba(47, 39, 31, 0.18);
+  --tab-inactive-bg: #f4ded4;
+  --tab-inactive-text: #724435;
+  --tab-inactive-hover-bg: #edd0c3;
+  --pill-active-bg: #f9e6de;
+  --pill-active-text: #b54524;
+  --priority-high: #d94d4a;
+  --priority-medium: #cf9e36;
+  --priority-low: #4e7e57;
+  --progress-border: #66948a;
+  --progress-fill: rgba(102, 148, 138, 0.24);
+  --progress-text: #3d6960;
+  --tag-bg: #f4ede6;
+  --tag-border: #e4d5c8;
+  --tag-text: #715445;
+  --danger: #d44643;
+  --danger-soft: #fceae9;
+  --success: #4e7e57;
+  --warning: #cf932e;
+  --shadow-panel: 0 8px 28px rgba(44, 38, 30, 0.11);
+  --shadow-popover: 0 14px 38px rgba(44, 38, 30, 0.17);
   --panel-opacity: 1;
   --font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
   --font-body-size: 14px;
@@ -288,7 +288,7 @@ select {
 }
 
 /* ==========================================================================
-   Panel Header (Daibantie Top Bar)
+   Panel Header (Top Bar)
    ========================================================================== */
 
 .panel-header {
@@ -551,20 +551,14 @@ select {
 }
 
 .skin-swatch-tile {
+  position: relative;
   display: inline-flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
-  gap: 3px;
-  padding: 4px;
-  border-radius: 7px;
-  border: 1px solid rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+  border-radius: 8px;
+  border: 1px solid rgba(128, 128, 128, 0.22);
   flex-shrink: 0;
-}
-
-.skin-swatch-bar {
-  width: 7px;
-  height: 12px;
-  border-radius: 2.5px;
 }
 
 .opacity-slider-row {
@@ -688,7 +682,7 @@ select {
 }
 
 /* ==========================================================================
-   Todo View (Daibantie Today/Week/Month/Unscheduled/List)
+   Todo View (Today / Week / Month / Unscheduled / List)
    ========================================================================== */
 
 .todo-view {
@@ -975,7 +969,7 @@ select {
   gap: 4px;
 }
 
-/* Task Row — Pixel Faithful to today-warm.webp */
+/* Task Row */
 .todo-item-wrap {
   display: flex;
   flex-direction: column;
@@ -1082,7 +1076,7 @@ select {
   line-height: 1.45;
 }
 
-/* Completed items in Daibantie: muted text WITHOUT strikethrough */
+/* Completed items: muted text without strikethrough for calm scannability */
 .todo-item-wrap.completed .todo-title-text {
   color: var(--text-completed);
 }
@@ -1469,7 +1463,7 @@ select {
 }
 
 /* ==========================================================================
-   Reminder Modal (Exact Daibantie reminder-cycle.webp layout)
+   Reminder Modal (Standard & Recurring Schedule)
    ========================================================================== */
 
 .reminder-back-link {

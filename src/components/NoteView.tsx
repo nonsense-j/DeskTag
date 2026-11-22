@@ -317,7 +317,7 @@ const AttachmentMedia: React.FC<{
     );
   }
 
-  // File attachment chip (matches note-warm.webp: "📄 交付清单.xlsx 24 KB")
+  // File attachment chip
   return (
     <span
       style={{
@@ -1055,7 +1055,7 @@ export const NoteView: React.FC<NoteViewProps> = ({ noteId, standalone = false }
         </header>
       )}
 
-      {/* Note Sub-header (matches note-warm.webp) */}
+      {/* Note Sub-header */}
       <div
         style={{
           display: 'flex',
@@ -1456,7 +1456,7 @@ export const NoteView: React.FC<NoteViewProps> = ({ noteId, standalone = false }
         </div>
       )}
 
-      {/* Bidirectional '@' Content Links Strip (matches note-warm.webp: "相关记录: 会议纪要") */}
+      {/* Bidirectional '@' Content Links Strip */}
       {note.links.length > 0 && (
         <div
           style={{
@@ -1991,7 +1991,7 @@ export const NoteView: React.FC<NoteViewProps> = ({ noteId, standalone = false }
             )}
           </div>
 
-          {/* Floating Right-Side Document Outline (matches note-warm.webp!) */}
+          {/* Floating Right-Side Document Outline */}
           {showOutline && headings.length > 0 && (
             <div
               onMouseEnter={() => setOutlineHover(true)}
@@ -2006,7 +2006,7 @@ export const NoteView: React.FC<NoteViewProps> = ({ noteId, standalone = false }
                 alignItems: 'flex-end',
               }}
             >
-              {/* Minimal Daibantie horizontal bars */}
+              {/* Minimal outline indicator bars */}
               <div
                 style={{
                   display: 'flex',
@@ -2471,7 +2471,7 @@ export const NoteView: React.FC<NoteViewProps> = ({ noteId, standalone = false }
         </div>
       )}
 
-      {/* Bottom-right live character counter (matches note-warm.webp: "110 字") */}
+      {/* Bottom-right live character counter */}
       <div
         style={{
           position: 'absolute',

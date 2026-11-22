@@ -8,7 +8,7 @@ import {
   openStorageDir,
 } from '../api/tauri';
 import { useDeskTagStore, type SettingsTabId } from '../store/useDeskTagStore';
-import { FONT_OPTIONS, SKINS, getFontFamilyStack } from '../themes/skins';
+import { FONT_OPTIONS, SKINS, getFontFamilyStack, getSkinById } from '../themes/skins';
 import type {
   AppData,
   DefaultView,
@@ -328,7 +328,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ inline = false }) 
         }}
       />
 
-      {/* Top Header (matches data.webp / dock-choices.webp) */}
+      {/* Top Header */}
       {!inline && (
         <div
           style={{
@@ -567,7 +567,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ inline = false }) 
           )}
 
           {/* =============================================================== */}
-          {/* TAB 2: 面板设置 (Panel Settings — Desktop Only, dock-choices)   */}
+          {/* TAB 2: 面板设置 (Panel Settings — Desktop Only)                 */}
           {/* =============================================================== */}
           {activeTab === 'panel' && !hideDesktopOnly && (
             <>
@@ -686,7 +686,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ inline = false }) 
                     marginBottom: 12,
                   }}
                 >
-                  DeskTag 待办贴 Aa 123
+                  DeskTag Aa 123
                 </div>
 
                 <div className="dt-setting-row">
@@ -753,7 +753,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ inline = false }) 
               {/* 11 Skins Quick Grid + Opacity */}
               <div className="dt-settings-card">
                 <div className="dt-setting-title" style={{ marginBottom: 10 }}>
-                  主题皮肤（11 款暖纸配色）
+                  主题皮肤（11 款原创配色）
                 </div>
                 <div
                   style={{
@@ -763,7 +763,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ inline = false }) 
                   }}
                 >
                   {SKINS.map((skin) => {
-                    const active = settings.skinId === skin.id;
+                    const active = getSkinById(settings.skinId).id === skin.id;
                     return (
                       <button
                         key={skin.id}
@@ -777,7 +777,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ inline = false }) 
                           borderRadius: 10,
                           border: `1.5px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
                           background: active ? 'var(--accent-soft)' : 'var(--bg-surface)',
-                          color: 'var(--text-primary)',
+                          color: active ? 'var(--accent-soft-text)' : 'var(--text-primary)',
                           cursor: 'pointer',
                           textAlign: 'left',
                         }}
@@ -1039,7 +1039,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ inline = false }) 
           )}
 
           {/* =============================================================== */}
-          {/* TAB 5: 数据与同步 (Data & Sync — matches data.webp + WebDAV!)   */}
+          {/* TAB 5: 数据与同步 (Data & Sync + WebDAV)                        */}
           {/* =============================================================== */}
           {activeTab === 'data' && (
             <>
@@ -1052,7 +1052,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ inline = false }) 
                 onStatusChange={setWebdavStatusState}
               />
 
-              {/* Card 2: Backup & Migration (exact Daibantie data.webp layout) */}
+              {/* Card 2: Backup & Migration */}
               <div className="dt-settings-card">
                 <div className="dt-settings-card-title">备份与迁移</div>
                 <div className="dt-setting-desc" style={{ marginTop: 4 }}>
@@ -1161,7 +1161,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ inline = false }) 
                 </div>
               </div>
 
-              {/* Card 3: Local Storage (exact Daibantie data.webp layout) */}
+              {/* Card 3: Local Storage */}
               <div className="dt-settings-card">
                 <div className="dt-settings-card-title">本机存储</div>
                 <div className="dt-setting-desc" style={{ marginTop: 4 }}>
@@ -1256,9 +1256,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ inline = false }) 
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                   <MascotAvatar size={44} />
                   <div>
-                    <div style={{ fontSize: 17, fontWeight: 700 }}>DeskTag 待办贴</div>
+                    <div style={{ fontSize: 17, fontWeight: 700 }}>DeskTag</div>
                     <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>
-                      版本 v{platform.appVersion || '1.0.0'} · 开源轻量跨平台桌面贴边待办与便签
+                      版本 v{platform.appVersion || '1.0.1'} · 独立开源跨平台桌面贴边待办与便签
                     </div>
                   </div>
                 </div>
@@ -1274,9 +1274,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ inline = false }) 
                     border: '1px solid var(--border)',
                   }}
                 >
-                  「待办不用藏在层层窗口之后。待办和便签，贴在桌面边缘。需要时展开，专注时安静收起。」
+                  DeskTag 是一款独立开源的轻量跨平台桌面贴边待办与便签工具，让日常任务与灵感记录随手可得、专注时安静收拢。
                   <br />
-                  坚持本地优先、零订阅门槛，通过 AES-256-GCM 端到端加密 WebDAV 引擎自由同步 Windows、macOS 与 Android。
+                  坚持本地优先与数据自主，支持通过 AES-256-GCM 端到端加密 WebDAV 引擎在 Windows、macOS 与 Android 间自由同步。
                 </div>
 
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -1284,7 +1284,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ inline = false }) 
                     'Rust + Tauri v2',
                     'React 19 + TypeScript',
                     'AES-256-GCM E2EE WebDAV',
-                    '11 款暖纸皮肤',
+                    '11 款原创主题',
                     'Windows · macOS · Android',
                   ].map((badge) => (
                     <span

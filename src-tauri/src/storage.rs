@@ -830,7 +830,7 @@ impl StorageManager {
         html.push_str(&format!("<title>{}</title>\n", html_escape(title)));
         html.push_str(
             r#"<style>
-:root { --paper:#fbfaf7; --card:#ffffff; --header:#f6f5ee; --border:#e3e3d8; --accent:#e8734a; --ink:#332f2c; --muted:#7c756c; }
+:root { --paper:#fcfbf7; --card:#ffffff; --header:#f5f2ea; --border:#e2ded2; --accent:#df6542; --ink:#2e2a26; --muted:#7b746b; }
 * { box-sizing:border-box; }
 body { margin:0; padding:32px 20px; background:var(--paper); color:var(--ink); font-family:'Segoe UI','PingFang SC','Microsoft YaHei',system-ui,sans-serif; line-height:1.65; }
 .wrap { max-width:820px; margin:0 auto; background:var(--card); border:1px solid var(--border); border-radius:14px; overflow:hidden; box-shadow:0 8px 28px rgba(58,46,35,.06); }
@@ -871,7 +871,7 @@ h2:first-child { margin-top:0; }
 
         let now_str = Local::now().format("%Y-%m-%d %H:%M").to_string();
         html.push_str(&format!(
-            "<header><h1>{}</h1><span class=\"meta\">DeskTag 待办贴 · 导出于 {}</span></header>\n<main>\n",
+            "<header><h1>{}</h1><span class=\"meta\">DeskTag · 导出于 {}</span></header>\n<main>\n",
             html_escape(title),
             html_escape(&now_str)
         ));
@@ -1061,7 +1061,7 @@ h2:first-child { margin-top:0; }
         body.push_str(&docx_paragraph(title, Some("Heading1"), false));
         body.push_str(&docx_paragraph(
             &format!(
-                "DeskTag 待办贴 · 导出于 {}",
+                "DeskTag · 导出于 {}",
                 Local::now().format("%Y-%m-%d %H:%M")
             ),
             None,
@@ -1246,7 +1246,7 @@ h2:first-child { margin-top:0; }
         let styles_xml = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
 <w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Segoe UI" w:hAnsi="Segoe UI" w:eastAsia="Microsoft YaHei"/><w:sz w:val="21"/><w:color w:val="332F2C"/></w:rPr></w:rPrDefault></w:docDefaults>
-<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:pPr><w:spacing w:before="120" w:after="160"/></w:pPr><w:rPr><w:b/><w:sz w:val="34"/><w:color w:val="E8734A"/></w:rPr></w:style>
+<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:pPr><w:spacing w:before="120" w:after="160"/></w:pPr><w:rPr><w:b/><w:sz w:val="34"/><w:color w:val="DF6542"/></w:rPr></w:style>
 <w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:pPr><w:spacing w:before="220" w:after="100"/></w:pPr><w:rPr><w:b/><w:sz w:val="26"/><w:color w:val="5B4A3F"/></w:rPr></w:style>
 </w:styles>"#;
 
@@ -1469,7 +1469,7 @@ fn build_markdown_export(
     let mut md = String::with_capacity(4096);
     md.push_str(&format!("# {title}\n\n"));
     md.push_str(&format!(
-        "> DeskTag 待办贴 · 导出于 {}\n\n",
+        "> DeskTag · 导出于 {}\n\n",
         Local::now().format("%Y-%m-%d %H:%M")
     ));
 
@@ -1644,7 +1644,7 @@ fn build_pdf_export(
     push_wrapped(
         &mut lines,
         &format!(
-            "DeskTag 待办贴 · 导出于 {}",
+            "DeskTag · 导出于 {}",
             Local::now().format("%Y-%m-%d %H:%M")
         ),
         9.5,

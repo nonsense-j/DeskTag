@@ -18,7 +18,7 @@ const baseProps = (size: number, strokeWidth: number): React.SVGProps<SVGSVGElem
   'aria-hidden': true,
 });
 
-/** Cute warm minimalist DeskTag mascot matching Daibantie's top-left avatar */
+/** Minimalist DeskTag mascot badge shown in the panel header and About card */
 export const MascotAvatar: React.FC<IconProps> = ({ size = 24, ...rest }) => (
   <svg width={size} height={size} viewBox="0 0 28 28" fill="none" aria-hidden="true" {...rest}>
     <circle cx="14" cy="14" r="13" fill="var(--accent-soft)" stroke="var(--accent-border)" strokeWidth="1.2" />
@@ -52,7 +52,7 @@ export const MascotAvatar: React.FC<IconProps> = ({ size = 24, ...rest }) => (
   </svg>
 );
 
-/** Daibantie's signature 32x32 skin swatch icon with two bottom-aligned vertical bars */
+/** Original DeskTag theme swatch badge: rounded paper tile with duo palette circles and corner tag tab */
 export const SkinSwatchTile: React.FC<{ swatch: SkinSwatch; size?: number }> = ({
   swatch,
   size = 28,
@@ -66,8 +66,11 @@ export const SkinSwatchTile: React.FC<{ swatch: SkinSwatch; size?: number }> = (
     }}
     aria-hidden="true"
   >
-    <span className="skin-swatch-bar" style={{ background: swatch.accent }} />
-    <span className="skin-swatch-bar" style={{ background: swatch.ink }} />
+    <svg width={size} height={size} viewBox="0 0 28 28" fill="none">
+      <path d="M18 0H28V10L18 0Z" fill={swatch.accent} opacity="0.24" />
+      <circle cx="11.5" cy="14.5" r="5.6" fill={swatch.accent} />
+      <circle cx="18.2" cy="17.2" r="4.1" fill={swatch.ink} stroke={swatch.paper} strokeWidth="1.5" />
+    </svg>
   </span>
 );
 

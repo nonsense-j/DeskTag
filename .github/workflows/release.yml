@@ -381,8 +381,8 @@ jobs:
           cat <<EOF > "$NOTES_FILE"
           ## DeskTag ${TAG}
 
-          **待办贴开源跨平台复刻 + 端到端加密 WebDAV 云同步**  
-          *Open-source cross-platform Daibantie recreation with E2EE WebDAV cloud sync.*
+          **独立开源跨平台桌面贴边待办与便签 + 端到端加密 WebDAV 云同步**  
+          *Independent open-source cross-platform edge-docked sticky-note & todo companion with E2EE WebDAV cloud sync.*
 
           ### 下载说明 / Downloads
 
@@ -404,8 +404,8 @@ jobs:
           - 6 种贴边停靠与外露页签栏、多显示器工作区防溢出与全局快捷键
           - 待办子任务进度胶囊、自然语言识别、批量粘贴与自定义清单
           - 普通 / 时间轴双模式便签（折叠标题、大纲、表格、附件、\`@\` 双向关联、隐私锁）
-          - 独立农历日历、四象限、标准/重复提醒与免打扰时段、11 款内置皮肤
-          - Magpie 架构端到端加密 WebDAV 云同步（AES-256-GCM + PBKDF2-SHA256、三方逐项合并、同步预览/撤销、\`desktag-sync:...\` 一键配置）
+          - 独立农历日历、四象限、标准/重复提醒与免打扰时段、11 款原创主题皮肤
+          - 端到端加密 WebDAV 云同步（AES-256-GCM + PBKDF2-SHA256、三方逐项合并、同步预览/撤销、\`desktag-sync:...\` 一键配置）
           EOF
 
           PRERELEASE_FLAGS=()

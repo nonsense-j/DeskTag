@@ -72,24 +72,24 @@ async function hashPin(pin: string): Promise<string> {
   return `fnv_${(h >>> 0).toString(16)}`;
 }
 
-function buildWarmStarterData(base: AppData): AppData {
+function buildStarterData(base: AppData): AppData {
   const now = new Date();
   const nowIso = now.toISOString();
   const todayKey = formatDateKey(now);
   const tomorrowKey = formatDateKey(addDays(now, 1));
   const remTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 17, 30, 0, 0);
 
-  const listWorkId = 'list_work_demo';
-  const listDailyId = 'list_daily_demo';
-  const noteQuickId = 'note_quick_demo';
-  const noteMemoId = 'note_memo_demo';
-  const groupWorkId = 'group_work_demo';
+  const listDevId = 'list_dev_starter';
+  const listPersonalId = 'list_personal_starter';
+  const noteGuideId = 'note_guide_starter';
+  const noteIdeasId = 'note_ideas_starter';
+  const groupGuideId = 'group_guide_starter';
 
   const lists: TodoList[] = [
     {
-      id: listWorkId,
-      name: '工作项目',
-      color: '#e8734b',
+      id: listDevId,
+      name: '研发工作',
+      color: '#df6542',
       icon: null,
       pinnedToSide: true,
       tabWidth: null,
@@ -99,9 +99,9 @@ function buildWarmStarterData(base: AppData): AppData {
       deletedAt: null,
     },
     {
-      id: listDailyId,
-      name: '日常安排',
-      color: '#699863',
+      id: listPersonalId,
+      name: '个人事务',
+      color: '#4e7e57',
       icon: null,
       pinnedToSide: true,
       tabWidth: null,
@@ -114,22 +114,22 @@ function buildWarmStarterData(base: AppData): AppData {
 
   const todos: TodoItem[] = [
     {
-      id: 'todo_demo_1',
-      title: '准备下午的项目评审',
-      notes: '重点确认本周关键交付里程碑与跨端同步验收标准。',
+      id: 'todo_starter_1',
+      title: '熟悉 DeskTag 桌面贴边与快捷键',
+      notes: '可按 Alt+Shift+D 快速展开/收起面板，或在「设置 → 面板设置」中自由切换左侧、右侧与顶部贴边模式。',
       noteImages: [],
       completed: false,
       completedAt: null,
       priority: 'high',
       dueDate: todayKey,
-      dueTime: '14:00',
+      dueTime: '10:00',
       endDate: null,
-      listId: listWorkId,
-      tags: ['工作'],
+      listId: listDevId,
+      tags: ['上手', '效率'],
       subtasks: [
         {
-          id: 'sub_demo_1_1',
-          title: '核对优先事项',
+          id: 'sub_starter_1_1',
+          title: '尝试点击右上角开启自动收起',
           notes: '',
           noteImages: [],
           completed: true,
@@ -137,8 +137,8 @@ function buildWarmStarterData(base: AppData): AppData {
           updatedAt: nowIso,
         },
         {
-          id: 'sub_demo_1_2',
-          title: '补充需要跟进的细节',
+          id: 'sub_starter_1_2',
+          title: '用 Ctrl+K 打开全局检索',
           notes: '',
           noteImages: [],
           completed: false,
@@ -149,16 +149,16 @@ function buildWarmStarterData(base: AppData): AppData {
       repeatRule: null,
       reminderRule: null,
       quadrantOverride: null,
-      links: [{ targetType: 'note', targetId: noteMemoId, label: '项目备忘' }],
+      links: [{ targetType: 'note', targetId: noteGuideId, label: 'DeskTag 快速上手' }],
       sortOrder: 0,
       createdAt: nowIso,
       updatedAt: nowIso,
       deletedAt: null,
     },
     {
-      id: 'todo_demo_2',
-      title: '核对本周交付清单',
-      notes: '',
+      id: 'todo_starter_2',
+      title: '在设置中配置 WebDAV 端到端加密同步',
+      notes: '在「设置 → 数据与同步」中填入坚果云、Nextcloud 或自建 WebDAV 地址，开启 AES-256-GCM 端到端加密跨端同步。',
       noteImages: [],
       completed: false,
       completedAt: null,
@@ -166,21 +166,21 @@ function buildWarmStarterData(base: AppData): AppData {
       dueDate: todayKey,
       dueTime: null,
       endDate: null,
-      listId: listWorkId,
-      tags: ['项目'],
+      listId: listDevId,
+      tags: ['云同步'],
       subtasks: [
         {
-          id: 'sub_demo_2_1',
-          title: '确认桌面与移动端皮肤效果',
+          id: 'sub_starter_2_1',
+          title: '填写 WebDAV 服务器地址与凭据',
           notes: '',
           noteImages: [],
-          completed: true,
+          completed: false,
           sortOrder: 0,
           updatedAt: nowIso,
         },
         {
-          id: 'sub_demo_2_2',
-          title: '测试 WebDAV 端到端加密同步',
+          id: 'sub_starter_2_2',
+          title: '设置端到端加密口令并执行预览同步',
           notes: '',
           noteImages: [],
           completed: false,
@@ -198,23 +198,37 @@ function buildWarmStarterData(base: AppData): AppData {
       deletedAt: null,
     },
     {
-      id: 'todo_demo_3',
-      title: '下班前整理会议纪要',
-      notes: '',
+      id: 'todo_starter_3',
+      title: '整理本周计划与重要提醒',
+      notes: '支持为重要事项设置单次或按日/周/月循环提醒，也可在四象限视图中快速划分优先级。',
       noteImages: [],
       completed: false,
       completedAt: null,
       priority: 'low',
-      dueDate: todayKey,
-      dueTime: null,
+      dueDate: tomorrowKey,
+      dueTime: '17:30',
       endDate: null,
-      listId: listDailyId,
-      tags: ['工作'],
+      listId: listPersonalId,
+      tags: ['计划'],
       subtasks: [
-        { id: 'sub_demo_3_1', title: '汇总评审结论', notes: '', noteImages: [], completed: true, sortOrder: 0, updatedAt: nowIso },
-        { id: 'sub_demo_3_2', title: '同步行动项给相关同事', notes: '', noteImages: [], completed: false, sortOrder: 1, updatedAt: nowIso },
-        { id: 'sub_demo_3_3', title: '归档会议附件', notes: '', noteImages: [], completed: false, sortOrder: 2, updatedAt: nowIso },
-        { id: 'sub_demo_3_4', title: '更新下周排期', notes: '', noteImages: [], completed: false, sortOrder: 3, updatedAt: nowIso },
+        {
+          id: 'sub_starter_3_1',
+          title: '在日历视图查看农历与日程排布',
+          notes: '',
+          noteImages: [],
+          completed: false,
+          sortOrder: 0,
+          updatedAt: nowIso,
+        },
+        {
+          id: 'sub_starter_3_2',
+          title: '为关键任务开启重复提醒与免打扰时段',
+          notes: '',
+          noteImages: [],
+          completed: false,
+          sortOrder: 1,
+          updatedAt: nowIso,
+        },
       ],
       repeatRule: null,
       reminderRule: {
@@ -241,8 +255,8 @@ function buildWarmStarterData(base: AppData): AppData {
       deletedAt: null,
     },
     {
-      id: 'todo_demo_4',
-      title: '整理桌面与收件箱',
+      id: 'todo_starter_4',
+      title: '安装并启动 DeskTag',
       notes: '',
       noteImages: [],
       completed: true,
@@ -251,8 +265,8 @@ function buildWarmStarterData(base: AppData): AppData {
       dueDate: todayKey,
       dueTime: null,
       endDate: null,
-      listId: listDailyId,
-      tags: ['生活'],
+      listId: listPersonalId,
+      tags: ['上手'],
       subtasks: [],
       repeatRule: null,
       reminderRule: null,
@@ -264,9 +278,9 @@ function buildWarmStarterData(base: AppData): AppData {
       deletedAt: null,
     },
     {
-      id: 'todo_demo_5',
-      title: '体验智能识别：输入「明天下午3点 复盘 #工作 重要 提醒」',
-      notes: '支持自动识别日期、时段、优先级、标签、重复和提醒。',
+      id: 'todo_starter_5',
+      title: '试试智能识别：输入「明天下午3点 周会复盘 #工作 重要 提醒」',
+      notes: '输入框支持自动识别日期、时间、优先级、标签、重复周期与提醒设置，多行粘贴可一键批量拆分为多条待办。',
       noteImages: [],
       completed: false,
       completedAt: null,
@@ -286,35 +300,12 @@ function buildWarmStarterData(base: AppData): AppData {
       updatedAt: nowIso,
       deletedAt: null,
     },
-    {
-      id: 'todo_demo_6',
-      title: '配置坚果云 / Nextcloud WebDAV 免费云同步',
-      notes: '在「设置 → 数据与同步」中开启 WebDAV 端到端加密同步，桌面端与手机端无缝同步。',
-      noteImages: [],
-      completed: false,
-      completedAt: null,
-      priority: 'medium',
-      dueDate: tomorrowKey,
-      dueTime: '10:00',
-      endDate: null,
-      listId: listWorkId,
-      tags: ['同步'],
-      subtasks: [],
-      repeatRule: null,
-      reminderRule: null,
-      quadrantOverride: null,
-      links: [],
-      sortOrder: 5,
-      createdAt: nowIso,
-      updatedAt: nowIso,
-      deletedAt: null,
-    },
   ];
 
   const noteGroups: NoteGroup[] = [
     {
-      id: groupWorkId,
-      name: '工作资料',
+      id: groupGuideId,
+      name: '上手指南',
       locked: false,
       pinHash: null,
       sortOrder: 0,
@@ -326,22 +317,51 @@ function buildWarmStarterData(base: AppData): AppData {
 
   const notes: NoteItem[] = [
     {
-      id: noteQuickId,
-      title: '随手记',
+      id: noteGuideId,
+      title: 'DeskTag 快速上手',
+      kind: 'normal',
+      content: `# DeskTag 快速上手
+
+## 核心快捷方式
+| 操作 | 快捷键 / 入口 | 说明 |
+| --- | --- | --- |
+| 展开 / 收起面板 | Alt+Shift+D | 任意应用窗口下全局呼出 |
+| 快速新建待办 | Alt+Shift+N | 自动聚焦顶部待办输入框 |
+| 全局内容检索 | Ctrl+K | 跨待办、清单与便签即时搜索 |
+| 切换外观主题 | 顶部主题图标 | 内置 11 款原创浅色与深色主题 |
+
+## 双向关联与大纲
+- 使用 \`#\` / \`##\` 标题即可自动生成右侧浮动目录大纲。
+- 在正文中输入 \`@\` 可快速双向关联任意待办或便签。
+- 点击工具栏「弹出窗口」可将常用便签固定为独立悬浮窗。`,
+      timelineEntries: [],
+      attachments: [],
+      links: [{ targetType: 'todo', targetId: 'todo_starter_1', label: '熟悉 DeskTag 桌面贴边与快捷键' }],
+      groupId: groupGuideId,
+      pinnedToSide: true,
+      tabWidth: null,
+      sortOrder: 0,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      deletedAt: null,
+    },
+    {
+      id: noteIdeasId,
+      title: '今日灵感记录',
       kind: 'timeline',
       content: '',
       timelineEntries: [
         {
-          id: 'tl_demo_1',
-          content: '上午和团队对齐了 DeskTag 的桌面贴边交互：平时安静贴边，需要时一触展开。',
+          id: 'tl_starter_1',
+          content: '欢迎使用 DeskTag！时间轴便签适合按时间顺序随手记录想法、会议片段与日常进展。',
           createdAt: new Date(now.getTime() - 3600 * 1000 * 2).toISOString(),
           updatedAt: nowIso,
           attachments: [],
           linkedTodoId: null,
         },
         {
-          id: 'tl_demo_2',
-          content: '可以点击任意时间轴记录右侧的「转为待办」，快速生成关联任务。',
+          id: 'tl_starter_2',
+          content: '点击单条记录右侧的「转为待办」，即可一键生成带双向关联的任务条目。',
           createdAt: nowIso,
           updatedAt: nowIso,
           attachments: [],
@@ -351,36 +371,6 @@ function buildWarmStarterData(base: AppData): AppData {
       attachments: [],
       links: [],
       groupId: null,
-      pinnedToSide: true,
-      tabWidth: null,
-      sortOrder: 0,
-      createdAt: nowIso,
-      updatedAt: nowIso,
-      deletedAt: null,
-    },
-    {
-      id: noteMemoId,
-      title: '项目备忘',
-      kind: 'normal',
-      content: `# 交付重点
-
-## 本周目标
-- 完成全套 11 款暖纸皮肤适配
-- 验证循环提醒与农历日历视图
-
-## 进度一览
-| 事项 | 负责人 | 状态 |
-| --- | --- | --- |
-| 桌面贴边与页签 | 客户端 | 进行中 |
-| WebDAV 加密同步 | 同步引擎 | 已就绪 |
-| 移动端适配 | 跨端组 | 验收中 |
-
-## 备注
-输入 @ 可快速关联任意待办或便签。`,
-      timelineEntries: [],
-      attachments: [],
-      links: [{ targetType: 'todo', targetId: 'todo_demo_1', label: '准备下午的项目评审' }],
-      groupId: groupWorkId,
       pinnedToSide: true,
       tabWidth: null,
       sortOrder: 1,
@@ -439,7 +429,7 @@ function defaultPlatformInfo(): PlatformInfo {
     platform,
     isDesktop: !isAndroid,
     isMobile: isAndroid,
-    appVersion: '1.0.0',
+    appVersion: '1.0.1',
     supportsEdgeDock: !isAndroid,
     supportsGlobalShortcut: !isAndroid,
     supportsTray: !isAndroid,
@@ -773,7 +763,7 @@ export const DeskTagProvider: React.FC<{ children: React.ReactNode }> = ({ child
           !alreadySeeded;
 
         if (isBrandNewEmpty) {
-          loadedData = buildWarmStarterData(loadedData);
+          loadedData = buildStarterData(loadedData);
           if (typeof window !== 'undefined') {
             window.localStorage.setItem(SEED_FLAG_KEY, '1');
           }
@@ -1280,7 +1270,7 @@ export const DeskTagProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // -------------------------------------------------------------------------
 
   const addList = useCallback(
-    (name: string, color: string = '#e8734b', pinnedToSide: boolean = false): TodoList => {
+    (name: string, color: string = '#df6542', pinnedToSide: boolean = false): TodoList => {
       const nowIso = new Date().toISOString();
       const existing = latestDataRef.current.lists.filter((l) => !l.deletedAt);
       const list: TodoList = {

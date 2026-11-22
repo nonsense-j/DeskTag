@@ -299,7 +299,7 @@ export const ReminderModal: React.FC = () => {
             </>
           ) : (
             <>
-              {/* Advanced Recurring Reminder Mode (Exact reminder-cycle.webp layout) */}
+              {/* Advanced Recurring Reminder Mode */}
               <button
                 type="button"
                 className="reminder-back-link"

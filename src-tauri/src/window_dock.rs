@@ -48,7 +48,7 @@ fn effective_tab_width(device: &DeviceSettings) -> u32 {
     device.uniform_tab_width.clamp(48, 120)
 }
 
-/// Compute expanded physical window rectangle for any of the 6 Daibantie docking modes,
+/// Compute expanded physical window rectangle for any of the 6 DeskTag edge-docking modes,
 /// clamped cleanly inside `work` (the active monitor's WorkArea).
 pub fn compute_expanded_rect(device: &DeviceSettings, work: &WorkAreaRect) -> PhysicalRect {
     let scale = work.scale_factor.max(0.5);

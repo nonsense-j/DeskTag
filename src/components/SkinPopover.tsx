@@ -1,11 +1,11 @@
 import React from 'react';
 import { useDeskTagStore } from '../store/useDeskTagStore';
-import { SKINS } from '../themes/skins';
+import { SKINS, getSkinById } from '../themes/skins';
 import { SkinSwatchTile } from './Icons';
 
 export const SkinPopover: React.FC = () => {
   const { data, platform, updateSyncedSettings, setShowSkinPopover } = useDeskTagStore();
-  const currentSkinId = data.settings.skinId;
+  const currentSkinId = getSkinById(data.settings.skinId).id;
   const opacityPct = Math.round((data.settings.opacity ?? 1) * 100);
 
   return (
