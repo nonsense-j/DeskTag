@@ -66,7 +66,8 @@ export const FONT_OPTIONS: FontOption[] = [
   {
     id: 'system',
     label: '系统默认',
-    stack: "'Segoe UI', 'PingFang SC', 'Microsoft YaHei', -apple-system, BlinkMacSystemFont, system-ui, sans-serif",
+    stack:
+      "'Segoe UI', 'PingFang SC', 'Microsoft YaHei', -apple-system, BlinkMacSystemFont, system-ui, sans-serif",
   },
   {
     id: 'yahei',
@@ -102,7 +103,61 @@ export function getFontFamilyStack(fontId: string): string {
   return FONT_OPTIONS[0].stack;
 }
 
+/**
+ * 12 DeskTag skins (10 light + 2 dark).
+ * Default skin (index 0): `ink-minimal` (authentic pure `@coss/style` neutral light).
+ * Dark skins: `coss-dark` (authentic pure `@coss/style` dark) & `midnight-ember`.
+ */
 export const SKINS: SkinDefinition[] = [
+  {
+    id: 'ink-minimal',
+    name: '素墨极简',
+    mode: 'light',
+    swatch: { paper: '#ffffff', accent: '#262626', ink: '#737373' },
+    colors: {
+      panelBg: '#ffffff',
+      headerBg: '#fafafa',
+      surfaceBg: '#ffffff',
+      surfaceHover: '#f5f5f5',
+      inputBg: '#ffffff',
+      cardBg: '#ffffff',
+      popoverBg: '#ffffff',
+      border: 'rgba(0, 0, 0, 0.08)',
+      borderStrong: 'rgba(0, 0, 0, 0.14)',
+      textPrimary: '#262626',
+      textSecondary: '#525252',
+      textMuted: '#737373',
+      textCompleted: '#a3a3a3',
+      accent: '#262626',
+      accentHover: '#171717',
+      accentSoft: '#f5f5f5',
+      accentSoftText: '#262626',
+      accentBorder: 'rgba(0, 0, 0, 0.14)',
+      accentText: '#fafafa',
+      activeTabBg: '#262626',
+      activeTabText: '#fafafa',
+      inactiveTabBg: '#f5f5f5',
+      inactiveTabText: '#525252',
+      inactiveTabHoverBg: '#ebebeb',
+      activePillBg: '#262626',
+      activePillText: '#fafafa',
+      priorityHigh: '#ef4444',
+      priorityMedium: '#f59e0b',
+      priorityLow: '#10b981',
+      progressBorder: '#525252',
+      progressFill: 'rgba(38, 38, 38, 0.14)',
+      progressText: '#404040',
+      tagBg: '#f5f5f5',
+      tagBorder: 'rgba(0, 0, 0, 0.08)',
+      tagText: '#525252',
+      danger: '#ef4444',
+      dangerSoft: 'rgba(239, 68, 68, 0.08)',
+      success: '#10b981',
+      warning: '#f59e0b',
+      shadow: '0 8px 28px rgba(0, 0, 0, 0.07)',
+      shadowStrong: '0 14px 38px rgba(0, 0, 0, 0.12)',
+    },
+  },
   {
     id: 'morning-linen',
     name: '晨光亚麻',
@@ -545,52 +600,52 @@ export const SKINS: SkinDefinition[] = [
     },
   },
   {
-    id: 'ink-minimal',
-    name: '素墨极简',
-    mode: 'light',
-    swatch: { paper: '#ffffff', accent: '#26282b', ink: '#c85a32' },
+    id: 'coss-dark',
+    name: '极夜纯粹',
+    mode: 'dark',
+    swatch: { paper: '#121212', accent: '#f5f5f5', ink: '#737373' },
     colors: {
-      panelBg: '#ffffff',
-      headerBg: '#f9f9fa',
-      surfaceBg: '#ffffff',
-      surfaceHover: '#f3f4f6',
-      inputBg: '#ffffff',
-      cardBg: '#ffffff',
-      popoverBg: '#ffffff',
-      border: '#e8e9ec',
-      borderStrong: '#d2d4d9',
-      textPrimary: '#222428',
-      textSecondary: '#595d66',
-      textMuted: '#8d929c',
-      textCompleted: '#a8acb5',
-      accent: '#26282b',
-      accentHover: '#15171a',
-      accentSoft: '#eff0f2',
-      accentSoftText: '#26282b',
-      accentBorder: '#c5c8ce',
-      accentText: '#ffffff',
-      activeTabBg: '#26282b',
-      activeTabText: '#ffffff',
-      inactiveTabBg: '#f3f4f6',
-      inactiveTabText: '#4c5058',
-      inactiveTabHoverBg: '#e8eaee',
-      activePillBg: '#26282b',
-      activePillText: '#ffffff',
-      priorityHigh: '#c85a32',
-      priorityMedium: '#cc9933',
-      priorityLow: '#4e7e57',
-      progressBorder: '#6f7fa8',
-      progressFill: 'rgba(111, 127, 168, 0.22)',
-      progressText: '#415075',
-      tagBg: '#f4f5f7',
-      tagBorder: '#e1e3e8',
-      tagText: '#4c5059',
-      danger: '#cc443f',
-      dangerSoft: '#fceae9',
-      success: '#467a50',
-      warning: '#c2882b',
-      shadow: '0 8px 28px rgba(24, 26, 30, 0.09)',
-      shadowStrong: '0 14px 38px rgba(24, 26, 30, 0.15)',
+      panelBg: '#121212',
+      headerBg: '#141414',
+      surfaceBg: '#171717',
+      surfaceHover: '#1f1f1f',
+      inputBg: '#171717',
+      cardBg: '#171717',
+      popoverBg: '#171717',
+      border: 'rgba(255, 255, 255, 0.06)',
+      borderStrong: 'rgba(255, 255, 255, 0.12)',
+      textPrimary: '#f5f5f5',
+      textSecondary: '#a3a3a3',
+      textMuted: '#737373',
+      textCompleted: '#525252',
+      accent: '#f5f5f5',
+      accentHover: '#e5e5e5',
+      accentSoft: 'rgba(255, 255, 255, 0.08)',
+      accentSoftText: '#f5f5f5',
+      accentBorder: 'rgba(255, 255, 255, 0.14)',
+      accentText: '#262626',
+      activeTabBg: '#f5f5f5',
+      activeTabText: '#171717',
+      inactiveTabBg: '#1c1c1c',
+      inactiveTabText: '#a3a3a3',
+      inactiveTabHoverBg: '#262626',
+      activePillBg: 'rgba(255, 255, 255, 0.12)',
+      activePillText: '#f5f5f5',
+      priorityHigh: '#f87171',
+      priorityMedium: '#fbbf24',
+      priorityLow: '#34d399',
+      progressBorder: '#a3a3a3',
+      progressFill: 'rgba(255, 255, 255, 0.16)',
+      progressText: '#d4d4d4',
+      tagBg: 'rgba(255, 255, 255, 0.06)',
+      tagBorder: 'rgba(255, 255, 255, 0.08)',
+      tagText: '#d4d4d4',
+      danger: '#f87171',
+      dangerSoft: 'rgba(239, 68, 68, 0.16)',
+      success: '#34d399',
+      warning: '#fbbf24',
+      shadow: '0 10px 30px rgba(0, 0, 0, 0.5)',
+      shadowStrong: '0 16px 44px rgba(0, 0, 0, 0.65)',
     },
   },
   {
@@ -674,15 +729,157 @@ export function applySkinToDocument(
   if (typeof document === 'undefined') return;
   const root = document.documentElement;
   const c = skin.colors;
+  const isDark = skin.mode === 'dark';
+  const isPureNeutralLight = skin.id === 'ink-minimal';
+  const isPureNeutralDark = skin.id === 'coss-dark';
 
   root.setAttribute('data-skin', skin.id);
   root.setAttribute('data-theme', skin.mode);
+  root.classList.toggle('dark', isDark);
+  root.style.colorScheme = isDark ? 'dark' : 'light';
 
   const clampedOpacity = Math.max(0.4, Math.min(1, Number.isFinite(opacity) ? opacity : 1));
   const clampedBody = Math.max(11, Math.min(20, Math.round(bodyFontSize || 14)));
   const clampedUi = Math.max(11, Math.min(18, Math.round(uiFontSize || 13)));
 
+  // Hairline translucent borders & subtle surface tints matched to each skin's hue
+  const cossBorder = isPureNeutralLight
+    ? 'rgba(0, 0, 0, 0.08)'
+    : isPureNeutralDark
+      ? 'rgba(255, 255, 255, 0.06)'
+      : isDark
+        ? `color-mix(in srgb, ${c.textPrimary} 11%, transparent)`
+        : `color-mix(in srgb, ${c.textPrimary} 10%, transparent)`;
+
+  const cossInput = isPureNeutralLight
+    ? 'rgba(0, 0, 0, 0.10)'
+    : isPureNeutralDark
+      ? 'rgba(255, 255, 255, 0.08)'
+      : isDark
+        ? `color-mix(in srgb, ${c.textPrimary} 15%, transparent)`
+        : `color-mix(in srgb, ${c.textPrimary} 13%, transparent)`;
+
+  const cossSubtleTint = isPureNeutralLight
+    ? 'rgba(0, 0, 0, 0.04)'
+    : isPureNeutralDark
+      ? 'rgba(255, 255, 255, 0.04)'
+      : isDark
+        ? `color-mix(in srgb, ${c.textPrimary} 6%, transparent)`
+        : `color-mix(in srgb, ${c.textPrimary} 4.5%, transparent)`;
+
+  const cossMutedForeground = isPureNeutralLight
+    ? 'color-mix(in srgb, #737373 90%, #000000)'
+    : isPureNeutralDark
+      ? 'color-mix(in srgb, #737373 90%, #ffffff)'
+      : `color-mix(in srgb, ${c.textSecondary} 72%, ${c.textMuted})`;
+
+  const cossRing = isPureNeutralLight
+    ? '#a3a3a3'
+    : isPureNeutralDark
+      ? '#737373'
+      : c.accentBorder;
+
+  const cossDestructive = isPureNeutralLight
+    ? '#ef4444'
+    : isPureNeutralDark
+      ? 'color-mix(in srgb, #ef4444 90%, #ffffff)'
+      : c.danger;
+
+  const cossDestructiveFg = isPureNeutralLight
+    ? '#b91c1c'
+    : isPureNeutralDark
+      ? '#f87171'
+      : isDark
+        ? `color-mix(in srgb, ${c.danger} 78%, #ffffff)`
+        : `color-mix(in srgb, ${c.danger} 82%, #000000)`;
+
+  const cossSuccess = isPureNeutralLight || isPureNeutralDark ? '#10b981' : c.success;
+  const cossSuccessFg = isPureNeutralLight
+    ? '#047857'
+    : isPureNeutralDark
+      ? '#34d399'
+      : isDark
+        ? `color-mix(in srgb, ${c.success} 78%, #ffffff)`
+        : `color-mix(in srgb, ${c.success} 82%, #000000)`;
+
+  const cossWarning = isPureNeutralLight || isPureNeutralDark ? '#f59e0b' : c.warning;
+  const cossWarningFg = isPureNeutralLight
+    ? '#b45309'
+    : isPureNeutralDark
+      ? '#fbbf24'
+      : isDark
+        ? `color-mix(in srgb, ${c.warning} 78%, #ffffff)`
+        : `color-mix(in srgb, ${c.warning} 82%, #000000)`;
+
+  const cossInfo = '#3b82f6';
+  const cossInfoFg = isDark ? '#60a5fa' : '#1d4ed8';
+
+  const cossSidebarBorder = isPureNeutralLight
+    ? 'rgba(0, 0, 0, 0.06)'
+    : isPureNeutralDark
+      ? 'rgba(255, 255, 255, 0.05)'
+      : `color-mix(in srgb, ${c.textPrimary} 8%, transparent)`;
+
+  const cossSidebarFg = isPureNeutralLight
+    ? 'color-mix(in srgb, #262626 64%, #fafafa)'
+    : isPureNeutralDark
+      ? 'color-mix(in srgb, #f5f5f5 64%, #141414)'
+      : c.textSecondary;
+
+  const cossFrameWell = isPureNeutralLight
+    ? 'rgba(0, 0, 0, 0.032)'
+    : isPureNeutralDark
+      ? 'rgba(255, 255, 255, 0.032)'
+      : isDark
+        ? `color-mix(in srgb, ${c.headerBg} 82%, #000000)`
+        : `color-mix(in srgb, ${c.headerBg} 76%, ${c.panelBg})`;
+
   const vars: Record<string, string> = {
+    // --- coss ui semantic tokens ---
+    '--background': c.panelBg,
+    '--foreground': c.textPrimary,
+    '--card': c.cardBg,
+    '--card-foreground': c.textPrimary,
+    '--popover': c.popoverBg,
+    '--popover-foreground': c.textPrimary,
+    '--primary': c.accent,
+    '--primary-foreground': c.accentText,
+    '--secondary': cossSubtleTint,
+    '--secondary-foreground': c.textPrimary,
+    '--muted': cossSubtleTint,
+    '--muted-foreground': cossMutedForeground,
+    '--accent': cossSubtleTint,
+    '--accent-foreground': c.textPrimary,
+    '--border': cossBorder,
+    '--input': cossInput,
+    '--ring': cossRing,
+    '--destructive': cossDestructive,
+    '--destructive-foreground': cossDestructiveFg,
+    '--info': cossInfo,
+    '--info-foreground': cossInfoFg,
+    '--success': cossSuccess,
+    '--success-foreground': cossSuccessFg,
+    '--warning': cossWarning,
+    '--warning-foreground': cossWarningFg,
+    '--sidebar': c.headerBg,
+    '--sidebar-foreground': cossSidebarFg,
+    '--sidebar-border': cossSidebarBorder,
+    '--sidebar-accent': cossSubtleTint,
+    '--sidebar-accent-foreground': c.textPrimary,
+    '--sidebar-primary': c.accent,
+    '--sidebar-primary-foreground': c.accentText,
+    '--sidebar-ring': cossRing,
+    '--coss-frame-well': cossFrameWell,
+
+    // --- DeskTag brand & domain tokens (no collision with coss --accent) ---
+    '--dt-accent': c.accent,
+    '--dt-accent-hover': c.accentHover,
+    '--dt-accent-soft': c.accentSoft,
+    '--dt-accent-soft-text': c.accentSoftText,
+    '--dt-accent-border': c.accentBorder,
+    '--dt-accent-text': c.accentText,
+
+    // --- Legacy DeskTag tokens kept intact during migration ---
     '--skin-paper': skin.swatch.paper,
     '--skin-accent': skin.swatch.accent,
     '--skin-ink': skin.swatch.ink,
@@ -693,13 +890,11 @@ export function applySkinToDocument(
     '--bg-input': c.inputBg,
     '--bg-card': c.cardBg,
     '--bg-popover': c.popoverBg,
-    '--border': c.border,
     '--border-strong': c.borderStrong,
     '--text-primary': c.textPrimary,
     '--text-secondary': c.textSecondary,
     '--text-muted': c.textMuted,
     '--text-completed': c.textCompleted,
-    '--accent': c.accent,
     '--accent-hover': c.accentHover,
     '--accent-soft': c.accentSoft,
     '--accent-soft-text': c.accentSoftText,
@@ -723,8 +918,6 @@ export function applySkinToDocument(
     '--tag-text': c.tagText,
     '--danger': c.danger,
     '--danger-soft': c.dangerSoft,
-    '--success': c.success,
-    '--warning': c.warning,
     '--shadow-panel': c.shadow,
     '--shadow-popover': c.shadowStrong,
     '--panel-opacity': String(clampedOpacity),

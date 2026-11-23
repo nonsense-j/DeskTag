@@ -45,8 +45,8 @@ export const MascotAvatar: React.FC<IconProps> = ({ size = 24, ...rest }) => (
     <circle cx="11.3" cy="14.5" r="1.15" fill="var(--text-primary)" />
     <circle cx="16.7" cy="14.5" r="1.15" fill="var(--text-primary)" />
     {/* Cheeks */}
-    <ellipse cx="9.2" cy="16.3" rx="1.3" ry="0.75" fill="var(--accent)" opacity="0.45" />
-    <ellipse cx="18.8" cy="16.3" rx="1.3" ry="0.75" fill="var(--accent)" opacity="0.45" />
+    <ellipse cx="9.2" cy="16.3" rx="1.3" ry="0.75" fill="var(--dt-accent)" opacity="0.45" />
+    <ellipse cx="18.8" cy="16.3" rx="1.3" ry="0.75" fill="var(--dt-accent)" opacity="0.45" />
     {/* Smile */}
     <path d="M12.6 16.8C13.1 17.5 14.9 17.5 15.4 16.8" stroke="var(--text-primary)" strokeWidth="1.3" strokeLinecap="round" />
   </svg>

@@ -1,5 +1,20 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  AlertCircle,
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  Copy,
+  Download,
+  ExternalLink,
+  Folder,
+  FolderOpen,
+  HardDrive,
+  RefreshCw,
+  RotateCcw,
+  Upload,
+} from 'lucide-react';
+import {
   changeStorageDir,
   exportBackup,
   getStorageInfo,
@@ -22,15 +37,39 @@ import type {
 } from '../types/models';
 import { formatRelativeTime } from '../utils/lunar';
 import { exportDeskTagDocument, type ClientExportFormat } from '../utils/exporter';
+import { cn } from '@/lib/utils';
+import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
-  ChevronDownIcon,
-  ChevronRightIcon,
-  CloseIcon,
-  CopyIcon,
-  FolderIcon,
-  MascotAvatar,
-  SkinSwatchTile,
-} from './Icons';
+  Card,
+  CardFrame,
+  CardFrameAction,
+  CardFrameDescription,
+  CardFrameHeader,
+  CardFrameTitle,
+  CardPanel,
+} from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Dialog, DialogHeader, DialogPopup, DialogTitle } from '@/components/ui/dialog';
+import { Frame, FramePanel } from '@/components/ui/frame';
+import { Input } from '@/components/ui/input';
+import { Kbd } from '@/components/ui/kbd';
+import { Progress, ProgressIndicator, ProgressTrack } from '@/components/ui/progress';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Select,
+  SelectItem,
+  SelectPopup,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Separator } from '@/components/ui/separator';
+import { Slider } from '@/components/ui/slider';
+import { Switch } from '@/components/ui/switch';
+import { Tabs, TabsList, TabsPanel, TabsTab } from '@/components/ui/tabs';
+import { MascotAvatar, SkinSwatchTile } from './Icons';
 import { WebDavSyncCard } from './WebDavSyncCard';
 
 export interface SettingsModalProps {
@@ -40,6 +79,11 @@ export interface SettingsModalProps {
   initialTab?: SettingsTabId | string;
 }
 
+const CLOSE_BEHAVIOR_OPTIONS = [
+  { value: 'tray', label: '隐藏至系统托盘' },
+  { value: 'quit', label: '直接退出程序' },
+];
+
 const DOCK_MODE_OPTIONS: Array<{ value: DockMode; label: string }> = [
   { value: 'right_tabs', label: '右侧保留页签' },
   { value: 'right_hide', label: '右侧完全隐藏' },
@@ -47,6 +91,12 @@ const DOCK_MODE_OPTIONS: Array<{ value: DockMode; label: string }> = [
   { value: 'left_hide', label: '左侧完全隐藏' },
   { value: 'top_hide', label: '顶部完全隐藏' },
   { value: 'top_tabs', label: '顶部保留页签' },
+];
+
+const TAB_WIDTH_MODE_OPTIONS: Array<{ value: TabWidthMode; label: string }> = [
+  { value: 'uniform', label: '统一宽度' },
+  { value: 'auto', label: '自动适配标题' },
+  { value: 'individual', label: '单独调整' },
 ];
 
 const SORT_OPTIONS: Array<{ value: TodoSortBy; label: string }> = [
@@ -65,6 +115,18 @@ const DEFAULT_VIEW_OPTIONS: Array<{ value: DefaultView; label: string }> = [
   { value: 'quadrant', label: '四象限' },
 ];
 
+const URGENT_DAYS_OPTIONS = [
+  { value: '0', label: '仅当天及逾期' },
+  { value: '1', label: '未来 1 天内' },
+  { value: '3', label: '未来 3 天内' },
+  { value: '7', label: '未来 7 天内' },
+];
+
+const FONT_SELECT_ITEMS = FONT_OPTIONS.map((f) => ({
+  value: f.id,
+  label: f.label,
+}));
+
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -74,7 +136,7 @@ function formatBytes(bytes: number): string {
 function getFallbackAppVersion(): string {
   return typeof __APP_VERSION__ === 'string' && __APP_VERSION__.trim()
     ? __APP_VERSION__
-    : '1.1.0';
+    : '1.2.0';
 }
 
 function formatInstallKindLabel(kind: InstallKind): string {
@@ -139,7 +201,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ inline = false, in
     data,
     device,
     platform,
-    isMobileLayout,
     showSettings,
     settingsTab,
     webdavStatus,
@@ -170,16 +231,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ inline = false, in
   const tabs: Array<{ id: SettingsTabId; label: string }> = hideDesktopOnly
     ? [
         { id: 'general', label: '通用' },
-        { id: 'personalize', label: '个性化' },
-        { id: 'data', label: '数据与同步' },
+        { id: 'personalize', label: '外观' },
+        { id: 'data', label: '同步' },
         { id: 'about', label: '关于' },
       ]
     : [
         { id: 'general', label: '通用' },
-        { id: 'panel', label: '面板设置' },
-        { id: 'personalize', label: '个性化' },
+        { id: 'panel', label: '面板' },
+        { id: 'personalize', label: '外观' },
         { id: 'shortcuts', label: '快捷键' },
-        { id: 'data', label: '数据与同步' },
+        { id: 'data', label: '同步' },
         { id: 'about', label: '关于' },
       ];
 
@@ -218,7 +279,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ inline = false, in
   }, []);
 
   useEffect(() => {
-    if ((inline || showSettings) && initialTab && VALID_SETTINGS_TABS.has(initialTab as SettingsTabId)) {
+    if (
+      (inline || showSettings) &&
+      initialTab &&
+      VALID_SETTINGS_TABS.has(initialTab as SettingsTabId)
+    ) {
       setSettingsTab(initialTab as SettingsTabId);
     }
   }, [inline, showSettings, initialTab, setSettingsTab]);
@@ -228,8 +293,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ inline = false, in
       void loadStorageInfo();
     }
   }, [inline, showSettings, activeTab, loadStorageInfo]);
-
-  if (!inline && !showSettings) return null;
 
   const handleExportBackup = async () => {
     if (!includeData && !includeSettings) {
@@ -382,1196 +445,1156 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ inline = false, in
     }
   };
 
-  const content = (
-    <div
-      className="dt-settings-shell"
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        width: '100%',
-        height: inline ? '100%' : 'min(84vh, 620px)',
-        maxWidth: inline ? 'none' : 700,
-        borderRadius: inline ? 0 : 14,
-        background: 'var(--bg-panel)',
-        color: 'var(--text-primary)',
-        border: inline ? 'none' : '1px solid var(--border)',
-        boxShadow: inline ? 'none' : 'var(--shadow-popover)',
-        overflow: 'hidden',
-      }}
-    >
+  const appVersion = platform.appVersion || getFallbackAppVersion();
+  const isVersionSkipped = Boolean(
+    updateResult?.hasUpdate &&
+      device.skippedUpdateVersion &&
+      device.skippedUpdateVersion === updateResult.latestVersion,
+  );
+  const updateBadge: { label: string; variant: 'secondary' | 'error' | 'info' | 'success' } | null =
+    updateChecking
+      ? { label: '检查中', variant: 'secondary' }
+      : updateError
+        ? { label: '检查失败', variant: 'error' }
+        : updateResult?.hasUpdate
+          ? { label: '有新版本', variant: 'info' }
+          : updateResult
+            ? { label: '已是最新', variant: 'success' }
+            : null;
+  const releaseDate = formatReleaseDate(updateResult?.publishedAt ?? null);
+  const showProgress =
+    updateInstalling || Boolean(updateProgress && updateProgress.stage !== 'error');
+
+  const tabsBody = (
+    <>
       <input
         ref={backupFileInputRef}
         type="file"
         accept=".json,application/json"
-        style={{ display: 'none' }}
+        className="hidden"
         onChange={(e) => {
           void handleBrowserBackupFile(e.target.files);
           e.target.value = '';
         }}
       />
 
-      {/* Top Header */}
-      {!inline && (
-        <div
-          style={{
-            height: 46,
-            flexShrink: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '0 14px 0 18px',
-            background: 'var(--bg-header)',
-            borderBottom: '1px solid var(--border)',
-          }}
-        >
-          <span style={{ fontWeight: 700, fontSize: 15 }}>设置</span>
-          <button
-            type="button"
-            aria-label="关闭设置"
-            onClick={() => setShowSettings(false)}
-            style={{
-              width: 28,
-              height: 28,
-              borderRadius: 7,
-              border: 'none',
-              background: 'transparent',
-              color: 'var(--text-secondary)',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-            }}
-          >
-            <CloseIcon size={16} />
-          </button>
-        </div>
-      )}
-
-      {/* Body: Left Sidebar (Desktop) or Top Scrollable Pill Bar (Mobile) + Right Pane */}
-      <div
-        style={{
-          flex: 1,
-          minHeight: 0,
-          display: 'flex',
-          flexDirection: isMobileLayout ? 'column' : 'row',
-          overflow: 'hidden',
-        }}
-      >
-        {/* Navigation */}
-        <nav
-          style={
-            isMobileLayout
-              ? {
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  overflowX: 'auto',
-                  padding: '8px 12px',
-                  background: 'var(--bg-header)',
-                  borderBottom: '1px solid var(--border)',
-                  flexShrink: 0,
-                }
-              : {
-                  width: 136,
-                  flexShrink: 0,
-                  padding: '10px 8px',
-                  background: 'var(--bg-header)',
-                  borderRight: '1px solid var(--border)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 3,
-                }
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) => {
+          if (typeof value === 'string' && VALID_SETTINGS_TABS.has(value as SettingsTabId)) {
+            setSettingsTab(value as SettingsTabId);
           }
-        >
-          {tabs.map((tab) => {
-            const active = activeTab === tab.id;
-            const showDot = tab.id === 'about' && hasUnignoredUpdate;
-            return (
-              <button
+        }}
+        className="flex min-h-0 flex-1 flex-col gap-0"
+      >
+        {/* Horizontal Underline Tabs Bar */}
+        <div className="shrink-0 overflow-x-auto border-b border-border px-3">
+          <TabsList
+            variant="underline"
+            size="sm"
+            className="w-max min-w-full justify-start gap-1 py-0.5"
+          >
+            {tabs.map((tab) => (
+              <TabsTab
                 key={tab.id}
-                type="button"
-                onClick={() => setSettingsTab(tab.id)}
-                style={{
-                  position: 'relative',
-                  textAlign: isMobileLayout ? 'center' : 'left',
-                  padding: isMobileLayout ? '6px 12px' : '8px 12px',
-                  borderRadius: 9,
-                  border: 'none',
-                  background: active ? 'var(--pill-active-bg)' : 'transparent',
-                  color: active ? 'var(--pill-active-text)' : 'var(--text-secondary)',
-                  fontWeight: active ? 600 : 500,
-                  fontSize: 13,
-                  whiteSpace: 'nowrap',
-                  cursor: 'pointer',
-                }}
+                value={tab.id}
+                className="h-8 grow-0 px-2.5 text-[13px] font-medium text-muted-foreground hover:bg-accent/70 hover:text-foreground data-active:font-semibold data-active:text-foreground"
               >
-                {tab.label}
-                {showDot && <span className="dt-update-dot" aria-label="有可用更新" />}
-              </button>
-            );
-          })}
-        </nav>
+                <span>{tab.label}</span>
+                {tab.id === 'about' && hasUnignoredUpdate && (
+                  <span
+                    className="ms-1 inline-block size-1.5 rounded-full bg-destructive"
+                    aria-label="有可用更新"
+                  />
+                )}
+              </TabsTab>
+            ))}
+          </TabsList>
+        </div>
 
         {/* Scrollable Content Pane */}
-        <div
-          style={{
-            flex: 1,
-            minWidth: 0,
-            minHeight: 0,
-            overflowY: 'auto',
-            padding: isMobileLayout ? '14px 12px 28px' : '18px 22px 26px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 14,
-          }}
-        >
+        <ScrollArea overscrollContain scrollFade className="min-h-0 flex-1">
           {/* =============================================================== */}
           {/* TAB 1: 通用 (General)                                           */}
           {/* =============================================================== */}
-          {activeTab === 'general' && (
-            <>
-              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>通用</h3>
-
-              <div className="dt-settings-card">
+          <TabsPanel value="general" className="flex flex-col gap-3 p-3.5 pb-5">
+            <Frame>
+              <FramePanel className="flex flex-col gap-3 p-3.5">
                 {!hideDesktopOnly && (
                   <>
-                    <label className="dt-setting-row">
-                      <div>
-                        <div className="dt-setting-title">开机自动启动</div>
-                        <div className="dt-setting-desc">登录系统后安静贴边待命，不打扰桌面焦点</div>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-[13px] font-medium text-foreground">开机自动启动</div>
+                        <div className="mt-0.5 text-xs text-muted-foreground">
+                          登录系统后安静贴边待命，不打扰桌面焦点
+                        </div>
                       </div>
-                      <input
-                        type="checkbox"
+                      <Switch
                         checked={device.launchAtLogin}
-                        onChange={(e) => void updateDeviceSettings({ launchAtLogin: e.target.checked })}
-                      />
-                    </label>
-
-                    <div className="dt-setting-divider" />
-
-                    <div className="dt-setting-row">
-                      <div>
-                        <div className="dt-setting-title">点击右上角 × 时</div>
-                        <div className="dt-setting-desc">推荐隐藏至系统托盘，随时点击托盘图标或快捷键展开</div>
-                      </div>
-                      <select
-                        className="dt-select"
-                        value={device.closeToTray ? 'tray' : 'quit'}
-                        onChange={(e) =>
-                          void updateDeviceSettings({ closeToTray: e.target.value === 'tray' })
+                        onCheckedChange={(checked) =>
+                          void updateDeviceSettings({ launchAtLogin: checked })
                         }
-                      >
-                        <option value="tray">隐藏至系统托盘</option>
-                        <option value="quit">直接退出程序</option>
-                      </select>
+                        aria-label="开机自动启动"
+                      />
                     </div>
 
-                    <div className="dt-setting-divider" />
-                  </>
-                )}
+                    <Separator />
 
-                <label className="dt-setting-row">
-                  <div>
-                    <div className="dt-setting-title">提醒提示音</div>
-                    <div className="dt-setting-desc">待办提醒触发时播放轻柔提示音</div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={settings.notificationSound}
-                    onChange={(e) => updateSyncedSettings({ notificationSound: e.target.checked })}
-                  />
-                </label>
-
-                <div className="dt-setting-divider" />
-
-                {/* Do-Not-Disturb Window (勿扰时段) */}
-                <label className="dt-setting-row">
-                  <div>
-                    <div className="dt-setting-title">勿扰时段</div>
-                    <div className="dt-setting-desc">在设定的休息时段内暂不弹出系统通知与声音提醒</div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={settings.dndEnabled}
-                    onChange={(e) => updateSyncedSettings({ dndEnabled: e.target.checked })}
-                  />
-                </label>
-
-                {settings.dndEnabled && (
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 10,
-                      flexWrap: 'wrap',
-                      paddingTop: 8,
-                    }}
-                  >
-                    <span style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>静默时间：</span>
-                    <input
-                      type="time"
-                      className="dt-input"
-                      style={{ width: 112 }}
-                      value={settings.dndStart}
-                      onChange={(e) => updateSyncedSettings({ dndStart: e.target.value })}
-                    />
-                    <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>至</span>
-                    <input
-                      type="time"
-                      className="dt-input"
-                      style={{ width: 112 }}
-                      value={settings.dndEnd}
-                      onChange={(e) => updateSyncedSettings({ dndEnd: e.target.value })}
-                    />
-                  </div>
-                )}
-
-                <div className="dt-setting-divider" />
-
-                <div className="dt-setting-row">
-                  <div>
-                    <div className="dt-setting-title">默认启动视图</div>
-                    <div className="dt-setting-desc">打开 DeskTag 时默认展示的待办时间范围</div>
-                  </div>
-                  <select
-                    className="dt-select"
-                    value={settings.defaultView}
-                    onChange={(e) =>
-                      updateSyncedSettings({ defaultView: e.target.value as DefaultView })
-                    }
-                  >
-                    {DEFAULT_VIEW_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* =============================================================== */}
-          {/* TAB 2: 面板设置 (Panel Settings — Desktop Only)                 */}
-          {/* =============================================================== */}
-          {activeTab === 'panel' && !hideDesktopOnly && (
-            <>
-              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>面板设置</h3>
-
-              <div className="dt-settings-card">
-                <div className="dt-setting-row">
-                  <div>
-                    <div className="dt-setting-title">贴边方式</div>
-                    <div className="dt-setting-desc">选择面板停靠屏幕边缘的位置及自动收起后的表现</div>
-                  </div>
-                  <select
-                    className="dt-select"
-                    value={device.dockMode}
-                    onChange={(e) => void setDockMode(e.target.value as DockMode)}
-                  >
-                    {DOCK_MODE_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="dt-setting-divider" />
-
-                <div className="dt-setting-row">
-                  <div>
-                    <div className="dt-setting-title">面板布局</div>
-                    <div className="dt-setting-desc">
-                      恢复默认大小 480 × 680、位置及页签大小，并重新贴边。字体和字号保持不变。
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    className="dt-btn dt-btn-soft"
-                    onClick={() => void resetPanelLayout()}
-                  >
-                    恢复默认
-                  </button>
-                </div>
-
-                <div className="dt-setting-divider" />
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <div className="dt-setting-row">
-                    <div>
-                      <div className="dt-setting-title">页签大小</div>
-                      <div className="dt-setting-desc">自定义外凸侧边页签的宽度策略与展示数量</div>
-                    </div>
-                    <select
-                      className="dt-select"
-                      value={device.tabWidthMode}
-                      onChange={(e) =>
-                        void updateDeviceSettings({ tabWidthMode: e.target.value as TabWidthMode })
-                      }
-                    >
-                      <option value="uniform">统一宽度</option>
-                      <option value="auto">自动适配标题</option>
-                      <option value="individual">单独调整</option>
-                    </select>
-                  </div>
-
-                  <div className="dt-setting-row">
-                    <span style={{ fontSize: 12.5, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-                      页签宽度 ({device.uniformTabWidth} px)
-                    </span>
-                    <input
-                      type="range"
-                      min={48}
-                      max={104}
-                      step={2}
-                      value={device.uniformTabWidth}
-                      onChange={(e) =>
-                        void updateDeviceSettings({ uniformTabWidth: Number(e.target.value) })
-                      }
-                      style={{ width: 126, accentColor: 'var(--accent)', flexShrink: 0 }}
-                    />
-                  </div>
-
-                  <div className="dt-setting-row">
-                    <span style={{ fontSize: 12.5, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-                      最大可见页签数 ({device.maxVisibleTabs} 个)
-                    </span>
-                    <input
-                      type="range"
-                      min={4}
-                      max={14}
-                      step={1}
-                      value={device.maxVisibleTabs}
-                      onChange={(e) =>
-                        void updateDeviceSettings({ maxVisibleTabs: Number(e.target.value) })
-                      }
-                      style={{ width: 126, accentColor: 'var(--accent)', flexShrink: 0 }}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Typography Card */}
-              <div className="dt-settings-card">
-                <div className="dt-setting-title" style={{ marginBottom: 8 }}>
-                  字体和字号
-                </div>
-
-                {/* Live Preview Box */}
-                <div
-                  style={{
-                    padding: '12px 14px',
-                    borderRadius: 10,
-                    background: 'var(--bg-surface)',
-                    border: '1px solid var(--border)',
-                    fontFamily: getFontFamilyStack(settings.fontFamily),
-                    fontSize: settings.bodyFontSize,
-                    color: 'var(--text-primary)',
-                    marginBottom: 12,
-                  }}
-                >
-                  DeskTag Aa 123
-                </div>
-
-                <div className="dt-setting-row">
-                  <span style={{ fontSize: 13 }}>字体</span>
-                  <select
-                    className="dt-select"
-                    value={settings.fontFamily}
-                    onChange={(e) => updateSyncedSettings({ fontFamily: e.target.value })}
-                  >
-                    {FONT_OPTIONS.map((f) => (
-                      <option key={f.id} value={f.id}>
-                        {f.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="dt-setting-divider" />
-
-                <div className="dt-setting-row">
-                  <span style={{ fontSize: 13, whiteSpace: 'nowrap' }}>
-                    正文字号 ({settings.bodyFontSize} px)
-                  </span>
-                  <input
-                    type="range"
-                    min={12}
-                    max={18}
-                    step={1}
-                    value={settings.bodyFontSize}
-                    onChange={(e) =>
-                      updateSyncedSettings({ bodyFontSize: Number(e.target.value) })
-                    }
-                    style={{ width: 126, accentColor: 'var(--accent)', flexShrink: 0 }}
-                  />
-                </div>
-
-                <div className="dt-setting-divider" />
-
-                <div className="dt-setting-row">
-                  <span style={{ fontSize: 13, whiteSpace: 'nowrap' }}>
-                    界面字号 ({settings.uiFontSize} px)
-                  </span>
-                  <input
-                    type="range"
-                    min={11}
-                    max={16}
-                    step={1}
-                    value={settings.uiFontSize}
-                    onChange={(e) => updateSyncedSettings({ uiFontSize: Number(e.target.value) })}
-                    style={{ width: 126, accentColor: 'var(--accent)', flexShrink: 0 }}
-                  />
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* =============================================================== */}
-          {/* TAB 3: 个性化 (Personalization)                                 */}
-          {/* =============================================================== */}
-          {activeTab === 'personalize' && (
-            <>
-              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>个性化</h3>
-
-              {/* 11 Skins Quick Grid + Opacity */}
-              <div className="dt-settings-card">
-                <div className="dt-setting-title" style={{ marginBottom: 10 }}>
-                  主题皮肤（11 款原创配色）
-                </div>
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(118px, 1fr))',
-                    gap: 8,
-                  }}
-                >
-                  {SKINS.map((skin) => {
-                    const active = getSkinById(settings.skinId).id === skin.id;
-                    return (
-                      <button
-                        key={skin.id}
-                        type="button"
-                        onClick={() => updateSyncedSettings({ skinId: skin.id })}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 8,
-                          padding: '6px 8px',
-                          borderRadius: 10,
-                          border: `1.5px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
-                          background: active ? 'var(--accent-soft)' : 'var(--bg-surface)',
-                          color: active ? 'var(--accent-soft-text)' : 'var(--text-primary)',
-                          cursor: 'pointer',
-                          textAlign: 'left',
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-[13px] font-medium text-foreground">
+                          点击右上角 × 时
+                        </div>
+                        <div className="mt-0.5 text-xs text-muted-foreground">
+                          推荐隐藏至系统托盘，随时点击托盘图标或快捷键展开
+                        </div>
+                      </div>
+                      <Select
+                        items={CLOSE_BEHAVIOR_OPTIONS}
+                        value={device.closeToTray ? 'tray' : 'quit'}
+                        onValueChange={(val) => {
+                          if (val !== null) {
+                            void updateDeviceSettings({ closeToTray: val === 'tray' });
+                          }
                         }}
                       >
-                        <SkinSwatchTile swatch={skin.swatch} size={26} />
-                        <span style={{ fontSize: 12.5, fontWeight: active ? 600 : 500 }}>
-                          {skin.name}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {!hideDesktopOnly && (
-                  <>
-                    <div className="dt-setting-divider" />
-                    <div className="dt-setting-row">
-                      <span style={{ fontSize: 13, whiteSpace: 'nowrap' }}>
-                        面板透明度 ({Math.round(settings.opacity * 100)}%)
-                      </span>
-                      <input
-                        type="range"
-                        min={40}
-                        max={100}
-                        step={2}
-                        value={Math.round(settings.opacity * 100)}
-                        onChange={(e) =>
-                          updateSyncedSettings({ opacity: Number(e.target.value) / 100 })
-                        }
-                        style={{ width: 126, accentColor: 'var(--accent)', flexShrink: 0 }}
-                      />
+                        <SelectTrigger size="sm" className="w-36 shrink-0">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectPopup align="end" alignItemWithTrigger={false}>
+                          {CLOSE_BEHAVIOR_OPTIONS.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </SelectItem>
+                          ))}
+                        </SelectPopup>
+                      </Select>
                     </div>
+
+                    <Separator />
                   </>
                 )}
-              </div>
 
-              {/* Todo Display & Intelligence */}
-              <div className="dt-settings-card">
-                <div className="dt-setting-row">
-                  <div>
-                    <div className="dt-setting-title">列表排序</div>
-                    <div className="dt-setting-desc">待办列表内未完成项目的默认排列方式</div>
-                  </div>
-                  <select
-                    className="dt-select"
-                    value={settings.sortBy}
-                    onChange={(e) => updateSyncedSettings({ sortBy: e.target.value as TodoSortBy })}
-                  >
-                    {SORT_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="dt-setting-divider" />
-
-                <label className="dt-setting-row">
-                  <div>
-                    <div className="dt-setting-title">自动编号</div>
-                    <div className="dt-setting-desc">在待办与子任务前显示层次序号（1. / 1.1）</div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={settings.autoNumbering}
-                    onChange={(e) => updateSyncedSettings({ autoNumbering: e.target.checked })}
-                  />
-                </label>
-
-                <div className="dt-setting-divider" />
-
-                <label className="dt-setting-row">
-                  <div>
-                    <div className="dt-setting-title">详情展示</div>
-                    <div className="dt-setting-desc">在待办列表中直接展示提醒时间、标签与子任务进度</div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={settings.showDetailsInList}
-                    onChange={(e) => updateSyncedSettings({ showDetailsInList: e.target.checked })}
-                  />
-                </label>
-
-                <div className="dt-setting-divider" />
-
-                <label className="dt-setting-row">
-                  <div>
-                    <div className="dt-setting-title">智能文字识别</div>
-                    <div className="dt-setting-desc">
-                      新建待办时自动解析日期、时段、优先级、标签、提醒与重复规则
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-[13px] font-medium text-foreground">提醒提示音</div>
+                    <div className="mt-0.5 text-xs text-muted-foreground">
+                      待办提醒触发时播放轻柔提示音
                     </div>
                   </div>
-                  <input
-                    type="checkbox"
-                    checked={settings.smartTextRecognition}
-                    onChange={(e) =>
-                      updateSyncedSettings({ smartTextRecognition: e.target.checked })
+                  <Switch
+                    checked={settings.notificationSound}
+                    onCheckedChange={(checked) =>
+                      updateSyncedSettings({ notificationSound: checked })
                     }
+                    aria-label="提醒提示音"
                   />
-                </label>
-              </div>
-
-              {/* Quadrant Rules */}
-              <div className="dt-settings-card">
-                <div className="dt-setting-title" style={{ marginBottom: 8 }}>
-                  四象限归类规则
-                </div>
-                <div className="dt-setting-row">
-                  <span style={{ fontSize: 13 }}>「紧急」判定截止天数</span>
-                  <select
-                    className="dt-select"
-                    value={settings.quadrantRules.urgentWithinDays}
-                    onChange={(e) =>
-                      updateSyncedSettings({
-                        quadrantRules: {
-                          ...settings.quadrantRules,
-                          urgentWithinDays: Number(e.target.value),
-                        },
-                      })
-                    }
-                  >
-                    <option value={0}>仅当天及逾期</option>
-                    <option value={1}>未来 1 天内</option>
-                    <option value={3}>未来 3 天内</option>
-                    <option value={7}>未来 7 天内</option>
-                  </select>
                 </div>
 
-                <div className="dt-setting-divider" />
+                <Separator />
 
-                <div className="dt-setting-row">
-                  <span style={{ fontSize: 13 }}>「重要」包含优先级</span>
-                  <div style={{ display: 'flex', gap: 10 }}>
-                    {(
-                      [
-                        ['high', '高'],
-                        ['medium', '中'],
-                        ['low', '低'],
-                      ] as Array<[TodoPriority, string]>
-                    ).map(([p, label]) => (
-                      <label
-                        key={p}
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12.5, cursor: 'pointer' }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={settings.quadrantRules.importantPriorities.includes(p)}
-                          onChange={() => toggleImportantPriority(p)}
-                        />
-                        <span>{label}</span>
-                      </label>
-                    ))}
+                {/* Do-Not-Disturb Window */}
+                <div className="flex flex-col gap-2.5">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-[13px] font-medium text-foreground">勿扰时段</div>
+                      <div className="mt-0.5 text-xs text-muted-foreground">
+                        在设定的休息时段内暂不弹出系统通知与声音提醒
+                      </div>
+                    </div>
+                    <Switch
+                      checked={settings.dndEnabled}
+                      onCheckedChange={(checked) => updateSyncedSettings({ dndEnabled: checked })}
+                      aria-label="勿扰时段"
+                    />
                   </div>
+
+                  {settings.dndEnabled && (
+                    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-coss-frame-well px-3 py-2">
+                      <span className="text-xs font-medium text-muted-foreground">静默时间</span>
+                      <Input
+                        size="sm"
+                        type="time"
+                        className="w-28"
+                        aria-label="勿扰开始时间"
+                        value={settings.dndStart}
+                        onChange={(e) => updateSyncedSettings({ dndStart: e.target.value })}
+                      />
+                      <span className="text-xs text-muted-foreground">至</span>
+                      <Input
+                        size="sm"
+                        type="time"
+                        className="w-28"
+                        aria-label="勿扰结束时间"
+                        value={settings.dndEnd}
+                        onChange={(e) => updateSyncedSettings({ dndEnd: e.target.value })}
+                      />
+                    </div>
+                  )}
                 </div>
-              </div>
-            </>
+
+                <Separator />
+
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-[13px] font-medium text-foreground">默认启动视图</div>
+                    <div className="mt-0.5 text-xs text-muted-foreground">
+                      打开 DeskTag 时默认展示的待办时间范围
+                    </div>
+                  </div>
+                  <Select
+                    items={DEFAULT_VIEW_OPTIONS}
+                    value={settings.defaultView}
+                    onValueChange={(val) => {
+                      if (val !== null) {
+                        updateSyncedSettings({ defaultView: val as DefaultView });
+                      }
+                    }}
+                  >
+                    <SelectTrigger size="sm" className="w-32 shrink-0">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectPopup align="end" alignItemWithTrigger={false}>
+                      {DEFAULT_VIEW_OPTIONS.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectPopup>
+                  </Select>
+                </div>
+              </FramePanel>
+            </Frame>
+          </TabsPanel>
+
+          {/* =============================================================== */}
+          {/* TAB 2: 面板 (Panel Settings — Desktop Only)                     */}
+          {/* =============================================================== */}
+          {!hideDesktopOnly && (
+            <TabsPanel value="panel" className="flex flex-col gap-3 p-3.5 pb-5">
+              {/* Dock & Tab Rail Card */}
+              <CardFrame>
+                <CardFrameHeader className="py-2.5 px-3.5">
+                  <CardFrameTitle className="text-[13px]">贴边与页签</CardFrameTitle>
+                </CardFrameHeader>
+                <Card>
+                  <CardPanel className="flex flex-col gap-3 p-3.5">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-[13px] font-medium text-foreground">贴边方式</div>
+                        <div className="mt-0.5 text-xs text-muted-foreground">
+                          选择面板停靠屏幕边缘的位置及自动收起后的表现
+                        </div>
+                      </div>
+                      <Select
+                        items={DOCK_MODE_OPTIONS}
+                        value={device.dockMode}
+                        onValueChange={(val) => {
+                          if (val !== null) void setDockMode(val as DockMode);
+                        }}
+                      >
+                        <SelectTrigger size="sm" className="w-36 shrink-0">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectPopup align="end" alignItemWithTrigger={false}>
+                          {DOCK_MODE_OPTIONS.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </SelectItem>
+                          ))}
+                        </SelectPopup>
+                      </Select>
+                    </div>
+
+                    <Separator />
+
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-[13px] font-medium text-foreground">面板布局</div>
+                        <div className="mt-0.5 text-xs text-muted-foreground">
+                          恢复默认大小 480 × 680、位置及页签大小，并重新贴边。字体与字号保持不变。
+                        </div>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => void resetPanelLayout()}
+                        className="shrink-0 text-xs"
+                      >
+                        <RotateCcw className="size-3.5" />
+                        <span>恢复默认</span>
+                      </Button>
+                    </div>
+
+                    <Separator />
+
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-[13px] font-medium text-foreground">页签宽度策略</div>
+                        <div className="mt-0.5 text-xs text-muted-foreground">
+                          自定义外凸侧边页签的宽度策略与展示数量
+                        </div>
+                      </div>
+                      <Select
+                        items={TAB_WIDTH_MODE_OPTIONS}
+                        value={device.tabWidthMode}
+                        onValueChange={(val) => {
+                          if (val !== null) {
+                            void updateDeviceSettings({ tabWidthMode: val as TabWidthMode });
+                          }
+                        }}
+                      >
+                        <SelectTrigger size="sm" className="w-36 shrink-0">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectPopup align="end" alignItemWithTrigger={false}>
+                          {TAB_WIDTH_MODE_OPTIONS.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </SelectItem>
+                          ))}
+                        </SelectPopup>
+                      </Select>
+                    </div>
+
+                    {/* Uniform Tab Width Slider */}
+                    <div className="flex flex-col gap-2 pt-0.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-medium text-muted-foreground">页签宽度</span>
+                        <Badge variant="secondary" size="sm" className="tabular-nums">
+                          {device.uniformTabWidth} px
+                        </Badge>
+                      </div>
+                      <Slider
+                        min={48}
+                        max={104}
+                        step={2}
+                        value={device.uniformTabWidth}
+                        getAriaLabel={() => '页签宽度'}
+                        onValueChange={(val) => {
+                          const next = Array.isArray(val) ? val[0] : val;
+                          if (typeof next === 'number') {
+                            void updateDeviceSettings({ uniformTabWidth: next });
+                          }
+                        }}
+                      />
+                    </div>
+
+                    {/* Max Visible Tabs Slider */}
+                    <div className="flex flex-col gap-2 pt-0.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-medium text-muted-foreground">
+                          最大可见页签数
+                        </span>
+                        <Badge variant="secondary" size="sm" className="tabular-nums">
+                          {device.maxVisibleTabs} 个
+                        </Badge>
+                      </div>
+                      <Slider
+                        min={4}
+                        max={14}
+                        step={1}
+                        value={device.maxVisibleTabs}
+                        getAriaLabel={() => '最大可见页签数'}
+                        onValueChange={(val) => {
+                          const next = Array.isArray(val) ? val[0] : val;
+                          if (typeof next === 'number') {
+                            void updateDeviceSettings({ maxVisibleTabs: next });
+                          }
+                        }}
+                      />
+                    </div>
+                  </CardPanel>
+                </Card>
+              </CardFrame>
+
+              {/* Typography Card */}
+              <CardFrame>
+                <CardFrameHeader className="py-2.5 px-3.5">
+                  <CardFrameTitle className="text-[13px]">字体与字号</CardFrameTitle>
+                </CardFrameHeader>
+                <Card>
+                  <CardPanel className="flex flex-col gap-3 p-3.5">
+                    {/* Live Preview Box */}
+                    <div
+                      className="rounded-xl border border-border bg-coss-frame-well px-3.5 py-3 text-foreground"
+                      style={{
+                        fontFamily: getFontFamilyStack(settings.fontFamily),
+                        fontSize: settings.bodyFontSize,
+                      }}
+                    >
+                      DeskTag Aa 123 · 让日常任务与灵感随手可得
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-[13px] font-medium text-foreground">字体</span>
+                      <Select
+                        items={FONT_SELECT_ITEMS}
+                        value={settings.fontFamily}
+                        onValueChange={(val) => {
+                          if (val !== null) updateSyncedSettings({ fontFamily: val });
+                        }}
+                      >
+                        <SelectTrigger size="sm" className="w-44 shrink-0">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectPopup align="end" alignItemWithTrigger={false}>
+                          {FONT_SELECT_ITEMS.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </SelectItem>
+                          ))}
+                        </SelectPopup>
+                      </Select>
+                    </div>
+
+                    <Separator />
+
+                    {/* Body Font Size Slider */}
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[13px] font-medium text-foreground">正文字号</span>
+                        <Badge variant="secondary" size="sm" className="tabular-nums">
+                          {settings.bodyFontSize} px
+                        </Badge>
+                      </div>
+                      <Slider
+                        min={12}
+                        max={18}
+                        step={1}
+                        value={settings.bodyFontSize}
+                        getAriaLabel={() => '正文字号'}
+                        onValueChange={(val) => {
+                          const next = Array.isArray(val) ? val[0] : val;
+                          if (typeof next === 'number') {
+                            updateSyncedSettings({ bodyFontSize: next });
+                          }
+                        }}
+                      />
+                    </div>
+
+                    <Separator />
+
+                    {/* UI Font Size Slider */}
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[13px] font-medium text-foreground">界面字号</span>
+                        <Badge variant="secondary" size="sm" className="tabular-nums">
+                          {settings.uiFontSize} px
+                        </Badge>
+                      </div>
+                      <Slider
+                        min={11}
+                        max={16}
+                        step={1}
+                        value={settings.uiFontSize}
+                        getAriaLabel={() => '界面字号'}
+                        onValueChange={(val) => {
+                          const next = Array.isArray(val) ? val[0] : val;
+                          if (typeof next === 'number') {
+                            updateSyncedSettings({ uiFontSize: next });
+                          }
+                        }}
+                      />
+                    </div>
+                  </CardPanel>
+                </Card>
+              </CardFrame>
+            </TabsPanel>
           )}
+
+          {/* =============================================================== */}
+          {/* TAB 3: 外观 (Personalization)                                   */}
+          {/* =============================================================== */}
+          <TabsPanel value="personalize" className="flex flex-col gap-3 p-3.5 pb-5">
+            {/* Theme Skins Grid + Opacity */}
+            <CardFrame>
+              <CardFrameHeader className="items-center py-2.5 px-3.5">
+                <CardFrameTitle className="text-[13px]">主题皮肤</CardFrameTitle>
+                <CardFrameAction>
+                  <Badge variant="secondary" size="sm">
+                    {SKINS.length} 款原创配色
+                  </Badge>
+                </CardFrameAction>
+              </CardFrameHeader>
+              <Card>
+                <CardPanel className="flex flex-col gap-3 p-3.5">
+                  <div className="grid grid-cols-2 gap-2 min-[380px]:grid-cols-3">
+                    {SKINS.map((skin) => {
+                      const active = getSkinById(settings.skinId).id === skin.id;
+                      return (
+                        <button
+                          key={skin.id}
+                          type="button"
+                          onClick={() => updateSyncedSettings({ skinId: skin.id })}
+                          className={cn(
+                            'group relative flex cursor-pointer items-center gap-2 rounded-xl border px-2.5 py-2 text-left transition-all outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                            active
+                              ? 'border-primary bg-accent text-foreground shadow-xs/5 ring-1 ring-primary/20'
+                              : 'border-border bg-card text-foreground/85 hover:bg-accent/60 hover:text-foreground',
+                          )}
+                        >
+                          <SkinSwatchTile swatch={skin.swatch} size={24} />
+                          <span className="min-w-0 flex-1 truncate text-xs font-medium">
+                            {skin.name}
+                          </span>
+                          {active && (
+                            <Check className="size-3.5 shrink-0 text-primary" aria-hidden="true" />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {!hideDesktopOnly && (
+                    <>
+                      <Separator />
+                      <div className="flex flex-col gap-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[13px] font-medium text-foreground">
+                            面板透明度
+                          </span>
+                          <Badge variant="secondary" size="sm" className="tabular-nums">
+                            {Math.round(settings.opacity * 100)}%
+                          </Badge>
+                        </div>
+                        <Slider
+                          min={40}
+                          max={100}
+                          step={2}
+                          value={Math.round(settings.opacity * 100)}
+                          getAriaLabel={() => '面板透明度'}
+                          onValueChange={(val) => {
+                            const next = Array.isArray(val) ? val[0] : val;
+                            if (typeof next === 'number') {
+                              updateSyncedSettings({ opacity: next / 100 });
+                            }
+                          }}
+                        />
+                      </div>
+                    </>
+                  )}
+                </CardPanel>
+              </Card>
+            </CardFrame>
+
+            {/* Todo Display & Intelligence */}
+            <CardFrame>
+              <CardFrameHeader className="py-2.5 px-3.5">
+                <CardFrameTitle className="text-[13px]">待办显示与智能解析</CardFrameTitle>
+              </CardFrameHeader>
+              <Card>
+                <CardPanel className="flex flex-col gap-3 p-3.5">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-[13px] font-medium text-foreground">列表排序</div>
+                      <div className="mt-0.5 text-xs text-muted-foreground">
+                        待办列表内未完成项目的默认排列方式
+                      </div>
+                    </div>
+                    <Select
+                      items={SORT_OPTIONS}
+                      value={settings.sortBy}
+                      onValueChange={(val) => {
+                        if (val !== null) updateSyncedSettings({ sortBy: val as TodoSortBy });
+                      }}
+                    >
+                      <SelectTrigger size="sm" className="w-40 shrink-0">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectPopup align="end" alignItemWithTrigger={false}>
+                        {SORT_OPTIONS.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </SelectItem>
+                        ))}
+                      </SelectPopup>
+                    </Select>
+                  </div>
+
+                  <Separator />
+
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-[13px] font-medium text-foreground">自动编号</div>
+                      <div className="mt-0.5 text-xs text-muted-foreground">
+                        在待办与子任务前显示层次序号（1. / 1.1）
+                      </div>
+                    </div>
+                    <Switch
+                      checked={settings.autoNumbering}
+                      onCheckedChange={(checked) =>
+                        updateSyncedSettings({ autoNumbering: checked })
+                      }
+                      aria-label="自动编号"
+                    />
+                  </div>
+
+                  <Separator />
+
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-[13px] font-medium text-foreground">详情展示</div>
+                      <div className="mt-0.5 text-xs text-muted-foreground">
+                        在待办列表中直接展示提醒时间、标签与子任务进度
+                      </div>
+                    </div>
+                    <Switch
+                      checked={settings.showDetailsInList}
+                      onCheckedChange={(checked) =>
+                        updateSyncedSettings({ showDetailsInList: checked })
+                      }
+                      aria-label="详情展示"
+                    />
+                  </div>
+
+                  <Separator />
+
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-[13px] font-medium text-foreground">智能文字识别</div>
+                      <div className="mt-0.5 text-xs text-muted-foreground">
+                        新建待办时自动解析日期、时段、优先级、标签、提醒与重复规则
+                      </div>
+                    </div>
+                    <Switch
+                      checked={settings.smartTextRecognition}
+                      onCheckedChange={(checked) =>
+                        updateSyncedSettings({ smartTextRecognition: checked })
+                      }
+                      aria-label="智能文字识别"
+                    />
+                  </div>
+                </CardPanel>
+              </Card>
+            </CardFrame>
+
+            {/* Quadrant Rules */}
+            <CardFrame>
+              <CardFrameHeader className="py-2.5 px-3.5">
+                <CardFrameTitle className="text-[13px]">四象限归类规则</CardFrameTitle>
+              </CardFrameHeader>
+              <Card>
+                <CardPanel className="flex flex-col gap-3 p-3.5">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-[13px] font-medium text-foreground">
+                      「紧急」判定截止天数
+                    </span>
+                    <Select
+                      items={URGENT_DAYS_OPTIONS}
+                      value={String(settings.quadrantRules.urgentWithinDays)}
+                      onValueChange={(val) => {
+                        if (val !== null) {
+                          updateSyncedSettings({
+                            quadrantRules: {
+                              ...settings.quadrantRules,
+                              urgentWithinDays: Number(val),
+                            },
+                          });
+                        }
+                      }}
+                    >
+                      <SelectTrigger size="sm" className="w-36 shrink-0">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectPopup align="end" alignItemWithTrigger={false}>
+                        {URGENT_DAYS_OPTIONS.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </SelectItem>
+                        ))}
+                      </SelectPopup>
+                    </Select>
+                  </div>
+
+                  <Separator />
+
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-[13px] font-medium text-foreground">
+                      「重要」包含优先级
+                    </span>
+                    <div className="flex items-center gap-3">
+                      {(
+                        [
+                          ['high', '高'],
+                          ['medium', '中'],
+                          ['low', '低'],
+                        ] as Array<[TodoPriority, string]>
+                      ).map(([p, label]) => {
+                        const checked = settings.quadrantRules.importantPriorities.includes(p);
+                        return (
+                          <label
+                            key={p}
+                            className="inline-flex cursor-pointer select-none items-center gap-1.5 text-xs font-medium text-foreground"
+                          >
+                            <Checkbox
+                              checked={checked}
+                              onCheckedChange={() => toggleImportantPriority(p)}
+                            />
+                            <span>{label}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </CardPanel>
+              </Card>
+            </CardFrame>
+          </TabsPanel>
 
           {/* =============================================================== */}
           {/* TAB 4: 快捷键 (Shortcuts — Desktop Only)                         */}
           {/* =============================================================== */}
-          {activeTab === 'shortcuts' && !hideDesktopOnly && (
-            <>
-              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>快捷键</h3>
+          {!hideDesktopOnly && (
+            <TabsPanel value="shortcuts" className="flex flex-col gap-3 p-3.5 pb-5">
+              <CardFrame>
+                <CardFrameHeader className="py-2.5 px-3.5">
+                  <CardFrameTitle className="text-[13px]">全局快捷键</CardFrameTitle>
+                </CardFrameHeader>
+                <Card>
+                  <CardPanel className="flex flex-col gap-3 p-3.5">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-[13px] font-medium text-foreground">
+                          显示 / 收起面板
+                        </div>
+                        <div className="mt-0.5 text-xs text-muted-foreground">
+                          点击输入框后直接按下组合键即可录制
+                        </div>
+                      </div>
+                      <Input
+                        size="sm"
+                        type="text"
+                        aria-label="显示或收起面板快捷键"
+                        className="w-36 shrink-0 [&_input]:text-center [&_input]:font-mono [&_input]:text-xs [&_input]:font-semibold"
+                        value={shortcutToggle}
+                        onKeyDown={(e) => captureKeyCombo(e, setShortcutToggle)}
+                        onChange={(e) => setShortcutToggle(e.target.value)}
+                      />
+                    </div>
 
-              <div className="dt-settings-card">
-                <div className="dt-setting-title" style={{ marginBottom: 10 }}>
-                  全局快捷键
-                </div>
-                <div className="dt-setting-row">
-                  <div>
-                    <div className="dt-setting-title">显示 / 收起面板</div>
-                    <div className="dt-setting-desc">点击输入框后直接按下组合键即可录制</div>
-                  </div>
-                  <input
-                    type="text"
-                    className="dt-input"
-                    style={{ width: 150, textAlign: 'center', fontWeight: 600 }}
-                    value={shortcutToggle}
-                    onKeyDown={(e) => captureKeyCombo(e, setShortcutToggle)}
-                    onChange={(e) => setShortcutToggle(e.target.value)}
-                  />
-                </div>
+                    <Separator />
 
-                <div className="dt-setting-divider" />
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-[13px] font-medium text-foreground">快速新建待办</div>
+                        <div className="mt-0.5 text-xs text-muted-foreground">
+                          唤起面板并立即聚焦顶部待办输入框
+                        </div>
+                      </div>
+                      <Input
+                        size="sm"
+                        type="text"
+                        aria-label="快速新建待办快捷键"
+                        className="w-36 shrink-0 [&_input]:text-center [&_input]:font-mono [&_input]:text-xs [&_input]:font-semibold"
+                        value={shortcutQuickAdd}
+                        onKeyDown={(e) => captureKeyCombo(e, setShortcutQuickAdd)}
+                        onChange={(e) => setShortcutQuickAdd(e.target.value)}
+                      />
+                    </div>
 
-                <div className="dt-setting-row">
-                  <div>
-                    <div className="dt-setting-title">快速新建待办</div>
-                    <div className="dt-setting-desc">唤起面板并立即聚焦顶部待办输入框</div>
-                  </div>
-                  <input
-                    type="text"
-                    className="dt-input"
-                    style={{ width: 150, textAlign: 'center', fontWeight: 600 }}
-                    value={shortcutQuickAdd}
-                    onKeyDown={(e) => captureKeyCombo(e, setShortcutQuickAdd)}
-                    onChange={(e) => setShortcutQuickAdd(e.target.value)}
-                  />
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
-                  <button
-                    type="button"
-                    className="dt-btn dt-btn-primary"
-                    onClick={() => {
-                      void updateDeviceSettings({
-                        globalShortcutToggle: shortcutToggle.trim() || 'Alt+Shift+D',
-                        globalShortcutQuickAdd: shortcutQuickAdd.trim() || 'Alt+Shift+N',
-                      }).then(() => showToast('全局快捷键已保存'));
-                    }}
-                  >
-                    保存快捷键
-                  </button>
-                </div>
-              </div>
-
-              <div className="dt-settings-card">
-                <div className="dt-setting-title" style={{ marginBottom: 10 }}>
-                  应用内快捷键参考
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12.5 }}>
-                  {[
-                    ['Enter', '快速创建待办'],
-                    ['Shift + Enter', '待办输入框内换行 / 批量粘贴多条待办'],
-                    ['@', '在便签或待办中输入 @ 快速双向关联其他内容'],
-                    ['Ctrl / Cmd + K', '打开全局检索（搜待办、子任务、标签、便签）'],
-                    ['Esc', '关闭当前弹窗、浮层或下拉菜单'],
-                  ].map(([key, desc]) => (
-                    <div
-                      key={key}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: 10,
-                      }}
-                    >
-                      <span style={{ color: 'var(--text-secondary)' }}>{desc}</span>
-                      <kbd
-                        style={{
-                          padding: '2px 8px',
-                          borderRadius: 6,
-                          border: '1px solid var(--border-strong)',
-                          background: 'var(--bg-surface)',
-                          fontSize: 11.5,
-                          fontFamily: 'monospace',
-                          whiteSpace: 'nowrap',
+                    <div className="flex justify-end pt-1">
+                      <Button
+                        size="sm"
+                        variant="default"
+                        onClick={() => {
+                          void updateDeviceSettings({
+                            globalShortcutToggle: shortcutToggle.trim() || 'Alt+Shift+D',
+                            globalShortcutQuickAdd: shortcutQuickAdd.trim() || 'Alt+Shift+N',
+                          }).then(() => showToast('全局快捷键已保存'));
                         }}
                       >
-                        {key}
-                      </kbd>
+                        保存快捷键
+                      </Button>
                     </div>
-                  ))}
-                </div>
-              </div>
-            </>
+                  </CardPanel>
+                </Card>
+              </CardFrame>
+
+              <CardFrame>
+                <CardFrameHeader className="py-2.5 px-3.5">
+                  <CardFrameTitle className="text-[13px]">应用内快捷键参考</CardFrameTitle>
+                </CardFrameHeader>
+                <Card>
+                  <CardPanel className="flex flex-col gap-2.5 p-3.5">
+                    {[
+                      ['Enter', '快速创建待办'],
+                      ['Shift + Enter', '待办输入框内换行 / 批量粘贴多条待办'],
+                      ['@', '在便签或待办中输入 @ 快速双向关联其他内容'],
+                      ['Ctrl / Cmd + K', '打开全局检索（搜待办、子任务、标签、便签）'],
+                      ['Esc', '关闭当前弹窗、浮层或下拉菜单'],
+                    ].map(([key, desc]) => (
+                      <div
+                        key={key}
+                        className="flex items-center justify-between gap-3 text-xs"
+                      >
+                        <span className="text-muted-foreground">{desc}</span>
+                        <Kbd className="shrink-0 px-1.5 font-mono text-[11px]">{key}</Kbd>
+                      </div>
+                    ))}
+                  </CardPanel>
+                </Card>
+              </CardFrame>
+            </TabsPanel>
           )}
 
           {/* =============================================================== */}
-          {/* TAB 5: 数据与同步 (Data & Sync + WebDAV)                        */}
+          {/* TAB 5: 同步 (Data & Sync + WebDAV)                              */}
           {/* =============================================================== */}
-          {activeTab === 'data' && (
-            <>
-              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>数据与同步</h3>
+          <TabsPanel value="data" className="flex flex-col gap-3 p-3.5 pb-5">
+            {/* Card 1: WebDAV Cloud Sync */}
+            <WebDavSyncCard
+              externalStatus={webdavStatus}
+              onDataSynced={applySyncedAppData}
+              onStatusChange={setWebdavStatusState}
+            />
 
-              {/* Card 1: WebDAV Cloud Sync */}
-              <WebDavSyncCard
-                externalStatus={webdavStatus}
-                onDataSynced={applySyncedAppData}
-                onStatusChange={setWebdavStatusState}
-              />
-
-              {/* Card 2: Backup & Migration */}
-              <div className="dt-settings-card">
-                <div className="dt-settings-card-title">备份与迁移</div>
-                <div className="dt-setting-desc" style={{ marginTop: 4 }}>
-                  本地优先存储，零账号依赖。可随时导出完整备份或在其他设备导入。
+            {/* Card 2: Backup & Local Storage */}
+            <CardFrame>
+              <CardFrameHeader className="items-center gap-x-2 py-2.5 px-3.5">
+                <div className="min-w-0">
+                  <CardFrameTitle className="flex items-center gap-1.5 text-[13px]">
+                    <HardDrive className="size-3.5 text-muted-foreground" />
+                    <span>备份与本机存储</span>
+                  </CardFrameTitle>
+                  <CardFrameDescription className="mt-0.5 truncate font-mono text-[11px]">
+                    {storageInfo
+                      ? `${storageInfo.dataDir} · ${formatBytes(storageInfo.totalBytes)}`
+                      : '本地优先存储 · 零账号依赖'}
+                  </CardFrameDescription>
                 </div>
-
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 14,
-                    marginTop: 12,
-                    fontSize: 13,
-                  }}
-                >
-                  <span style={{ color: 'var(--text-secondary)' }}>备份内容</span>
-                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}>
-                    <input
-                      type="checkbox"
-                      checked={includeData}
-                      onChange={(e) => setIncludeData(e.target.checked)}
-                    />
-                    <span>数据</span>
-                  </label>
-                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}>
-                    <input
-                      type="checkbox"
-                      checked={includeSettings}
-                      onChange={(e) => setIncludeSettings(e.target.checked)}
-                    />
-                    <span>设置</span>
-                  </label>
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12 }}>
-                  <button
-                    type="button"
-                    className="dt-btn dt-btn-primary"
-                    disabled={busyExport}
+                <CardFrameAction className="items-center gap-1.5">
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    loading={busyExport}
                     onClick={() => void handleExportBackup()}
                   >
-                    导出备份
-                  </button>
-                  <button
-                    type="button"
-                    className="dt-btn dt-btn-soft"
+                    <Download className="size-3" />
+                    <span>导出备份</span>
+                  </Button>
+                  <Button
+                    size="xs"
+                    variant="outline"
                     disabled={busyExport}
                     onClick={() => void handleImportBackupClick()}
                   >
-                    导入备份
-                  </button>
-                </div>
+                    <Upload className="size-3" />
+                    <span>导入</span>
+                  </Button>
+                </CardFrameAction>
+              </CardFrameHeader>
 
-                {/* Collapsible "其他导出" */}
-                <div style={{ marginTop: 12 }}>
-                  <button
-                    type="button"
-                    onClick={() => setShowOtherExports((v) => !v)}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 4,
-                      border: 'none',
-                      background: 'transparent',
-                      color: 'var(--accent)',
-                      fontSize: 12.5,
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      padding: 0,
-                    }}
-                  >
-                    {showOtherExports ? <ChevronDownIcon size={13} /> : <ChevronRightIcon size={13} />}
-                    <span>其他导出</span>
-                  </button>
+              <Card>
+                <CardPanel className="flex flex-col gap-3 p-3.5">
+                  {/* Backup Scope Checkboxes & Collapsible Other Export Formats */}
+                  <Collapsible open={showOtherExports} onOpenChange={setShowOtherExports}>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-3 text-xs">
+                        <span className="font-medium text-muted-foreground">备份内容</span>
+                        <label className="inline-flex cursor-pointer select-none items-center gap-1.5 text-foreground">
+                          <Checkbox
+                            checked={includeData}
+                            onCheckedChange={(checked) => setIncludeData(Boolean(checked))}
+                          />
+                          <span>数据</span>
+                        </label>
+                        <label className="inline-flex cursor-pointer select-none items-center gap-1.5 text-foreground">
+                          <Checkbox
+                            checked={includeSettings}
+                            onCheckedChange={(checked) => setIncludeSettings(Boolean(checked))}
+                          />
+                          <span>设置</span>
+                        </label>
+                      </div>
 
-                  {showOtherExports && (
-                    <div
-                      style={{
-                        display: 'flex',
-                        flexWrap: 'wrap',
-                        gap: 8,
-                        marginTop: 10,
-                      }}
-                    >
-                      {(
-                        [
-                          ['docx', 'Word (.docx)'],
-                          ['pdf', 'PDF / 打印'],
-                          ['html', 'HTML 网页'],
-                          ['markdown', 'Markdown (.md)'],
-                          ['csv', 'CSV 表格'],
-                        ] as Array<[ClientExportFormat, string]>
-                      ).map(([fmt, label]) => (
-                        <button
-                          key={fmt}
-                          type="button"
-                          className="dt-btn dt-btn-soft dt-btn-xs"
-                          disabled={busyExport}
-                          onClick={() => void handleOtherExport(fmt)}
-                        >
-                          {label}
-                        </button>
-                      ))}
+                      <CollapsibleTrigger
+                        render={
+                          <Button
+                            size="xs"
+                            variant="ghost"
+                            className="h-6 px-1.5 text-xs text-muted-foreground hover:text-foreground"
+                          />
+                        }
+                      >
+                        <span>其他格式导出</span>
+                        <ChevronDown
+                          className={cn(
+                            'size-3.5 transition-transform duration-150',
+                            showOtherExports && 'rotate-180',
+                          )}
+                        />
+                      </CollapsibleTrigger>
                     </div>
-                  )}
-                </div>
-              </div>
 
-              {/* Card 3: Local Storage */}
-              <div className="dt-settings-card">
-                <div className="dt-settings-card-title">本机存储</div>
-                <div className="dt-setting-desc" style={{ marginTop: 4 }}>
-                  仅调整本机保存位置；换电脑或跨设备同步请使用上方的 WebDAV 云同步或备份与迁移。
-                </div>
+                    <CollapsiblePanel>
+                      <div className="mt-2.5 flex flex-wrap gap-1.5 rounded-xl border border-border bg-coss-frame-well p-2.5">
+                        {(
+                          [
+                            ['docx', 'Word (.docx)'],
+                            ['pdf', 'PDF / 打印'],
+                            ['html', 'HTML 网页'],
+                            ['markdown', 'Markdown (.md)'],
+                            ['csv', 'CSV 表格'],
+                          ] as Array<[ClientExportFormat, string]>
+                        ).map(([fmt, label]) => (
+                          <Button
+                            key={fmt}
+                            size="xs"
+                            variant="outline"
+                            disabled={busyExport}
+                            onClick={() => void handleOtherExport(fmt)}
+                          >
+                            {label}
+                          </Button>
+                        ))}
+                      </div>
+                    </CollapsiblePanel>
+                  </Collapsible>
 
-                <div
-                  style={{
-                    marginTop: 10,
-                    fontSize: 13,
-                    fontWeight: 500,
-                    color: 'var(--text-primary)',
-                    wordBreak: 'break-all',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6,
-                  }}
-                >
-                  <FolderIcon size={15} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-                  <span>{storageInfo?.dataDir ?? '加载中…'}</span>
-                  {storageInfo && (
-                    <span style={{ fontSize: 11.5, color: 'var(--text-muted)', marginLeft: 'auto', whiteSpace: 'nowrap' }}>
-                      {formatBytes(storageInfo.totalBytes)}
-                    </span>
-                  )}
-                </div>
+                  <Separator />
 
-                {editingStorageDir && (
-                  <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-                    <input
-                      type="text"
-                      className="dt-input"
-                      value={customDirDraft}
-                      onChange={(e) => setCustomDirDraft(e.target.value)}
-                      placeholder="输入新的数据目录路径…"
-                    />
-                    <button
-                      type="button"
-                      className="dt-btn dt-btn-primary dt-btn-xs"
-                      onClick={() => void handleSaveCustomDir()}
-                    >
-                      保存
-                    </button>
-                    <button
-                      type="button"
-                      className="dt-btn dt-btn-ghost dt-btn-xs"
-                      onClick={() => setEditingStorageDir(false)}
-                    >
-                      取消
-                    </button>
+                  {/* Local Storage Path & Controls */}
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2 rounded-lg border border-border bg-coss-frame-well px-2.5 py-2 text-xs">
+                      <Folder className="size-3.5 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0 flex-1 break-all font-mono text-[11.5px] text-foreground">
+                        {storageInfo?.dataDir ?? '加载中…'}
+                      </span>
+                      {storageInfo && (
+                        <Badge variant="secondary" size="sm" className="shrink-0 tabular-nums">
+                          {formatBytes(storageInfo.totalBytes)}
+                        </Badge>
+                      )}
+                    </div>
+
+                    {editingStorageDir && (
+                      <div className="flex items-center gap-1.5">
+                        <Input
+                          size="sm"
+                          type="text"
+                          value={customDirDraft}
+                          onChange={(e) => setCustomDirDraft(e.target.value)}
+                          placeholder="输入新的数据目录路径…"
+                          className="flex-1"
+                        />
+                        <Button
+                          size="xs"
+                          variant="default"
+                          onClick={() => void handleSaveCustomDir()}
+                        >
+                          保存
+                        </Button>
+                        <Button
+                          size="xs"
+                          variant="ghost"
+                          onClick={() => setEditingStorageDir(false)}
+                        >
+                          取消
+                        </Button>
+                      </div>
+                    )}
+
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        onClick={() => void handleChangeStorageDir()}
+                      >
+                        更改位置
+                      </Button>
+                      {!hideDesktopOnly && (
+                        <Button
+                          size="xs"
+                          variant="outline"
+                          onClick={() => void openStorageDir()}
+                        >
+                          <FolderOpen className="size-3" />
+                          <span>打开目录</span>
+                        </Button>
+                      )}
+                      <Button
+                        size="xs"
+                        variant="ghost"
+                        onClick={() => void handleCopyPath()}
+                      >
+                        <Copy className="size-3" />
+                        <span>复制路径</span>
+                      </Button>
+                    </div>
                   </div>
-                )}
-
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
-                  <button
-                    type="button"
-                    className="dt-btn dt-btn-soft"
-                    onClick={() => void handleChangeStorageDir()}
-                  >
-                    更改位置
-                  </button>
-                  {!hideDesktopOnly && (
-                    <button
-                      type="button"
-                      className="dt-btn dt-btn-soft"
-                      onClick={() => void openStorageDir()}
-                    >
-                      打开目录
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    className="dt-btn dt-btn-soft"
-                    onClick={() => void handleCopyPath()}
-                  >
-                    <CopyIcon size={13} style={{ marginRight: 4, verticalAlign: '-2px' }} />
-                    复制路径
-                  </button>
-                </div>
-              </div>
-            </>
-          )}
+                </CardPanel>
+              </Card>
+            </CardFrame>
+          </TabsPanel>
 
           {/* =============================================================== */}
           {/* TAB 6: 关于 (About)                                             */}
           {/* =============================================================== */}
-          {activeTab === 'about' && (() => {
-            const appVersion = platform.appVersion || getFallbackAppVersion();
-            const isVersionSkipped = Boolean(
-              updateResult?.hasUpdate &&
-                device.skippedUpdateVersion &&
-                device.skippedUpdateVersion === updateResult.latestVersion,
-            );
-            const statusPill = updateChecking
-              ? { label: '检查中', bg: 'var(--bg-surface)', color: 'var(--text-secondary)', border: 'var(--border)' }
-              : updateError
-                ? { label: '检查失败', bg: 'var(--danger-soft)', color: 'var(--danger)', border: 'rgba(217, 77, 74, 0.35)' }
-                : updateResult?.hasUpdate
-                  ? { label: '有新版本', bg: 'var(--accent-soft)', color: 'var(--accent-soft-text)', border: 'var(--accent-border)' }
-                  : updateResult
-                    ? { label: '已是最新', bg: 'rgba(91, 140, 90, 0.14)', color: 'var(--success)', border: 'rgba(91, 140, 90, 0.35)' }
-                    : null;
-            const releaseDate = formatReleaseDate(updateResult?.publishedAt ?? null);
-            const showProgress =
-              updateInstalling || Boolean(updateProgress && updateProgress.stage !== 'error');
-
-            return (
-              <>
-                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>关于</h3>
-
-                {/* Card 1: Software Identity */}
-                <div className="dt-settings-card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <MascotAvatar size={44} />
-                    <div>
-                      <div style={{ fontSize: 17, fontWeight: 700 }}>DeskTag</div>
-                      <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>
-                        版本 v{appVersion} · 独立开源跨平台桌面贴边待办与便签
-                      </div>
+          <TabsPanel value="about" className="flex flex-col gap-3 p-3.5 pb-5">
+            {/* Card 1: Software Identity */}
+            <Frame>
+              <FramePanel className="flex flex-col gap-3 p-3.5">
+                <div className="flex items-center gap-3">
+                  <MascotAvatar size={42} />
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base font-bold text-foreground">DeskTag</span>
+                      <Badge variant="secondary" size="sm" className="tabular-nums">
+                        v{appVersion}
+                      </Badge>
                     </div>
-                  </div>
-
-                  <div
-                    style={{
-                      fontSize: 13,
-                      lineHeight: 1.7,
-                      color: 'var(--text-secondary)',
-                      padding: '10px 12px',
-                      borderRadius: 10,
-                      background: 'var(--bg-surface)',
-                      border: '1px solid var(--border)',
-                    }}
-                  >
-                    DeskTag 是一款独立开源的轻量跨平台桌面贴边待办与便签工具，让日常任务与灵感记录随手可得、专注时安静收拢。
-                    <br />
-                    坚持本地优先与数据自主，支持通过 AES-256-GCM 端到端加密 WebDAV 引擎在 Windows、macOS 与 Android 间自由同步。
-                  </div>
-
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                    {[
-                      'Rust + Tauri v2',
-                      'React 19 + TypeScript',
-                      'AES-256-GCM E2EE WebDAV',
-                      '11 款原创主题',
-                      'Windows · macOS · Android',
-                    ].map((badge) => (
-                      <span
-                        key={badge}
-                        style={{
-                          fontSize: 11.5,
-                          padding: '3px 9px',
-                          borderRadius: 999,
-                          background: 'var(--tag-bg)',
-                          border: '1px solid var(--tag-border)',
-                          color: 'var(--tag-text)',
-                        }}
-                      >
-                        {badge}
-                      </span>
-                    ))}
-                  </div>
-
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      flexWrap: 'wrap',
-                      gap: 8,
-                      paddingTop: 4,
-                    }}
-                  >
-                    <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>
-                      项目源码与问题反馈
-                    </span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      <button
-                        type="button"
-                        className="dt-btn dt-btn-ghost dt-btn-xs"
-                        onClick={() =>
-                          void handleOpenExternalUrl('https://github.com/nonsense-j/DeskTag/releases')
-                        }
-                      >
-                        发布日志 ↗
-                      </button>
-                      <button
-                        type="button"
-                        className="dt-btn dt-btn-soft"
-                        onClick={() => void handleOpenExternalUrl('https://github.com/nonsense-j/DeskTag')}
-                      >
-                        GitHub: nonsense-j/DeskTag ↗
-                      </button>
+                    <div className="mt-0.5 text-xs text-muted-foreground">
+                      独立开源跨平台桌面贴边待办与便签
                     </div>
                   </div>
                 </div>
 
-                {/* Card 2: Software Updates */}
-                <div className="dt-settings-card" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <div className="dt-setting-row">
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                        <span className="dt-settings-card-title">软件更新</span>
-                        {statusPill && (
-                          <span
-                            style={{
-                              fontSize: 11,
-                              fontWeight: 600,
-                              padding: '1px 8px',
-                              borderRadius: 999,
-                              background: statusPill.bg,
-                              color: statusPill.color,
-                              border: `1px solid ${statusPill.border}`,
-                            }}
-                          >
-                            {statusPill.label}
-                          </span>
-                        )}
-                      </div>
-                      <div className="dt-setting-desc">
-                        当前版本 v{appVersion}
-                        {device.lastUpdateCheckAt
-                          ? ` · 上次检查：${formatRelativeTime(device.lastUpdateCheckAt)}`
-                          : ''}
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      className="dt-btn dt-btn-soft"
-                      disabled={updateChecking || updateInstalling}
-                      onClick={() => void checkForUpdates({ force: true, silent: false })}
-                    >
-                      {updateChecking ? '检查中…' : updateResult ? '重新检查' : '检查更新'}
-                    </button>
-                  </div>
+                <div className="rounded-xl border border-border bg-coss-frame-well px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">
+                  DeskTag 是一款独立开源的轻量跨平台桌面贴边待办与便签工具，让日常任务与灵感记录随手可得、专注时安静收拢。
+                  <br />
+                  坚持本地优先与数据自主，支持通过 AES-256-GCM 端到端加密 WebDAV 引擎在 Windows、macOS 与 Android 间自由同步。
+                </div>
 
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    'Rust + Tauri v2',
+                    'React 19 + TypeScript',
+                    'AES-256-GCM E2EE WebDAV',
+                    `${SKINS.length} 款原创主题`,
+                    'Windows · macOS · Android',
+                  ].map((item) => (
+                    <Badge key={item} variant="secondary" size="sm">
+                      {item}
+                    </Badge>
+                  ))}
+                </div>
+
+                <Separator />
+
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs text-muted-foreground">项目源码与问题反馈</span>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      onClick={() =>
+                        void handleOpenExternalUrl('https://github.com/nonsense-j/DeskTag/releases')
+                      }
+                    >
+                      <span>发布日志</span>
+                      <ExternalLink className="size-3" />
+                    </Button>
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      onClick={() =>
+                        void handleOpenExternalUrl('https://github.com/nonsense-j/DeskTag')
+                      }
+                    >
+                      <span>GitHub: nonsense-j/DeskTag</span>
+                      <ExternalLink className="size-3" />
+                    </Button>
+                  </div>
+                </div>
+              </FramePanel>
+            </Frame>
+
+            {/* Card 2: Software Updates */}
+            <CardFrame>
+              <CardFrameHeader className="items-center gap-x-2 py-2.5 px-3.5">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <CardFrameTitle className="text-[13px]">软件更新</CardFrameTitle>
+                    {updateBadge && (
+                      <Badge variant={updateBadge.variant} size="sm">
+                        {updateBadge.label}
+                      </Badge>
+                    )}
+                  </div>
+                  <CardFrameDescription className="mt-0.5 text-[11.5px]">
+                    当前版本 v{appVersion}
+                    {device.lastUpdateCheckAt
+                      ? ` · 上次检查：${formatRelativeTime(device.lastUpdateCheckAt)}`
+                      : ''}
+                  </CardFrameDescription>
+                </div>
+                <CardFrameAction>
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    loading={updateChecking}
+                    disabled={updateChecking || updateInstalling}
+                    onClick={() => void checkForUpdates({ force: true, silent: false })}
+                  >
+                    <RefreshCw className="size-3" />
+                    <span>{updateResult ? '重新检查' : '检查更新'}</span>
+                  </Button>
+                </CardFrameAction>
+              </CardFrameHeader>
+
+              <Card>
+                <CardPanel className="flex flex-col gap-3 p-3.5">
                   {/* Error State */}
                   {updateError && !updateChecking && (
-                    <div className="dt-webdav-banner is-error">
-                      <div className="dt-webdav-banner-body">{updateError}</div>
-                      <div className="dt-webdav-banner-actions">
-                        <button
-                          type="button"
-                          className="dt-btn dt-btn-ghost dt-btn-xs"
+                    <Alert variant="error" className="px-3 py-2">
+                      <AlertCircle className="size-3.5" />
+                      <AlertDescription className="text-xs text-destructive-foreground">
+                        {updateError}
+                      </AlertDescription>
+                      <AlertAction>
+                        <Button
+                          size="xs"
+                          variant="ghost"
                           onClick={() => void checkForUpdates({ force: true, silent: false })}
                         >
                           重试
-                        </button>
-                        <button
-                          type="button"
-                          className="dt-btn dt-btn-ghost dt-btn-xs"
+                        </Button>
+                        <Button
+                          size="xs"
+                          variant="ghost"
                           onClick={() =>
-                            void handleOpenExternalUrl('https://github.com/nonsense-j/DeskTag/releases')
+                            void handleOpenExternalUrl(
+                              'https://github.com/nonsense-j/DeskTag/releases',
+                            )
                           }
                         >
-                          前往发布页 ↗
-                        </button>
-                      </div>
-                    </div>
+                          发布页
+                        </Button>
+                      </AlertAction>
+                    </Alert>
                   )}
 
                   {/* Up-to-date State */}
                   {updateResult && !updateResult.hasUpdate && !updateError && !updateChecking && (
-                    <div className="dt-webdav-banner is-success">
-                      <div className="dt-webdav-banner-body">
+                    <Alert variant="success" className="items-center px-3 py-2">
+                      <CheckCircle2 className="size-3.5" />
+                      <AlertTitle className="text-xs font-medium">
                         {updateResult.latestVersion === appVersion
                           ? `当前已是最新版本（v${appVersion}）。`
                           : `当前已是最新版本（当前 v${appVersion}，GitHub 最新 v${updateResult.latestVersion}）。`}
-                      </div>
-                    </div>
+                      </AlertTitle>
+                    </Alert>
                   )}
 
                   {/* New Version Available Panel */}
                   {updateResult?.hasUpdate && (
-                    <div
-                      style={{
-                        padding: '12px 13px',
-                        borderRadius: 10,
-                        background: 'var(--bg-surface)',
-                        border: '1px solid var(--accent-border)',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: 10,
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          gap: 8,
-                          flexWrap: 'wrap',
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                          <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-primary)' }}>
+                    <div className="flex flex-col gap-2.5 rounded-xl border border-border bg-coss-frame-well p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-[13px] font-semibold text-foreground">
                             {updateResult.releaseName || `DeskTag v${updateResult.latestVersion}`}
                           </span>
-                          <span
-                            style={{
-                              fontSize: 11,
-                              padding: '1px 7px',
-                              borderRadius: 999,
-                              background: 'var(--accent-soft)',
-                              color: 'var(--accent-soft-text)',
-                              border: '1px solid var(--accent-border)',
-                              fontWeight: 600,
-                            }}
-                          >
+                          <Badge variant="info" size="sm">
                             {formatInstallKindLabel(updateResult.installKind)}
-                          </span>
+                          </Badge>
                           {isVersionSkipped && (
-                            <span
-                              style={{
-                                fontSize: 11,
-                                padding: '1px 7px',
-                                borderRadius: 999,
-                                background: 'var(--tag-bg)',
-                                color: 'var(--text-muted)',
-                              }}
-                            >
+                            <Badge variant="secondary" size="sm">
                               已跳过
-                            </span>
+                            </Badge>
                           )}
                         </div>
-                        <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                        <span className="text-[11.5px] tabular-nums text-muted-foreground">
                           {[
                             releaseDate,
                             updateResult.recommendedAsset?.size
@@ -1584,55 +1607,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ inline = false, in
                       </div>
 
                       {updateResult.releaseNotes.trim() && (
-                        <div
-                          style={{
-                            maxHeight: 160,
-                            overflowY: 'auto',
-                            padding: '8px 10px',
-                            borderRadius: 8,
-                            background: 'var(--bg-header)',
-                            border: '1px solid var(--border)',
-                            fontSize: 12,
-                            lineHeight: 1.6,
-                            color: 'var(--text-secondary)',
-                            whiteSpace: 'pre-wrap',
-                            wordBreak: 'break-word',
-                            userSelect: 'text',
-                          }}
-                        >
+                        <div className="max-h-36 overflow-y-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-card px-2.5 py-2 text-xs leading-relaxed text-muted-foreground select-text">
                           {updateResult.releaseNotes.trim()}
                         </div>
                       )}
 
                       {showProgress && updateProgress && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                          <div
-                            style={{
-                              height: 6,
-                              borderRadius: 999,
-                              background: 'var(--border)',
-                              overflow: 'hidden',
-                            }}
-                          >
-                            <div
-                              style={{
-                                height: '100%',
-                                width: `${updateProgress.percent ?? 100}%`,
-                                background: 'var(--accent)',
-                                borderRadius: 999,
-                                transition: 'width 0.16s ease',
-                              }}
-                            />
-                          </div>
-                          <div
-                            style={{
-                              display: 'flex',
-                              justifyContent: 'space-between',
-                              gap: 8,
-                              fontSize: 11.5,
-                              color: 'var(--text-muted)',
-                            }}
-                          >
+                        <div className="flex flex-col gap-1.5">
+                          <Progress value={updateProgress.percent ?? 100}>
+                            <ProgressTrack>
+                              <ProgressIndicator />
+                            </ProgressTrack>
+                          </Progress>
+                          <div className="flex items-center justify-between gap-2 text-[11.5px] text-muted-foreground">
                             <span>
                               {updateProgress.message ||
                                 (updateProgress.stage === 'downloading'
@@ -1644,13 +1631,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ inline = false, in
                                       : '更新已就绪')}
                             </span>
                             {updateProgress.totalBytes ? (
-                              <span style={{ whiteSpace: 'nowrap' }}>
+                              <span className="shrink-0 tabular-nums">
                                 {formatBytes(updateProgress.downloadedBytes)} /{' '}
                                 {formatBytes(updateProgress.totalBytes)}
-                                {updateProgress.percent !== null ? ` · ${updateProgress.percent}%` : ''}
+                                {updateProgress.percent !== null
+                                  ? ` · ${updateProgress.percent}%`
+                                  : ''}
                               </span>
                             ) : updateProgress.downloadedBytes > 0 ? (
-                              <span style={{ whiteSpace: 'nowrap' }}>
+                              <span className="shrink-0 tabular-nums">
                                 {formatBytes(updateProgress.downloadedBytes)}
                               </span>
                             ) : null}
@@ -1658,38 +1647,33 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ inline = false, in
                         </div>
                       )}
 
-                      <div
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 8,
-                          flexWrap: 'wrap',
-                        }}
-                      >
-                        <button
-                          type="button"
-                          className="dt-btn dt-btn-primary"
+                      <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                        <Button
+                          size="sm"
+                          variant="default"
+                          loading={updateInstalling}
                           disabled={updateInstalling || updateChecking}
                           onClick={() => void installAvailableUpdate()}
+                          className="text-xs"
                         >
-                          {updateInstalling
-                            ? '正在处理…'
-                            : getInstallButtonLabel(
-                                updateResult.installKind,
-                                Boolean(updateResult.recommendedAsset),
-                              )}
-                        </button>
-                        <button
-                          type="button"
-                          className="dt-btn dt-btn-ghost"
+                          {getInstallButtonLabel(
+                            updateResult.installKind,
+                            Boolean(updateResult.recommendedAsset),
+                          )}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
                           onClick={() => void handleOpenExternalUrl(updateResult.releaseUrl)}
+                          className="text-xs"
                         >
-                          前往发布页 ↗
-                        </button>
-                        <button
-                          type="button"
-                          className="dt-link-btn"
-                          style={{ marginLeft: 'auto' }}
+                          <span>前往发布页</span>
+                          <ExternalLink className="size-3" />
+                        </Button>
+                        <Button
+                          size="xs"
+                          variant="ghost"
+                          className="ms-auto text-xs text-muted-foreground"
                           disabled={updateInstalling}
                           onClick={() =>
                             void skipUpdateVersion(
@@ -1698,68 +1682,59 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ inline = false, in
                           }
                         >
                           {isVersionSkipped ? '取消跳过此版本' : '跳过此版本'}
-                        </button>
+                        </Button>
                       </div>
                     </div>
                   )}
 
-                  <div className="dt-setting-divider" style={{ margin: '2px 0' }} />
+                  <Separator />
 
-                  <label className="dt-setting-row" style={{ cursor: 'pointer' }}>
-                    <div>
-                      <div className="dt-setting-title">启动时自动检查更新</div>
-                      <div className="dt-setting-desc">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-[13px] font-medium text-foreground">
+                        启动时自动检查更新
+                      </div>
+                      <div className="mt-0.5 text-xs text-muted-foreground">
                         应用启动后在后台静默检查 GitHub 新版本，仅发现更新时轻提示
                       </div>
                     </div>
-                    <input
-                      type="checkbox"
+                    <Switch
                       checked={device.autoCheckUpdates !== false}
-                      onChange={(e) =>
-                        void updateDeviceSettings({ autoCheckUpdates: e.target.checked })
+                      onCheckedChange={(checked) =>
+                        void updateDeviceSettings({ autoCheckUpdates: checked })
                       }
+                      aria-label="启动时自动检查更新"
                     />
-                  </label>
-                </div>
-              </>
-            );
-          })()}
-        </div>
-      </div>
-    </div>
+                  </div>
+                </CardPanel>
+              </Card>
+            </CardFrame>
+          </TabsPanel>
+        </ScrollArea>
+      </Tabs>
+    </>
   );
 
   if (inline) {
-    return content;
+    return (
+      <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-background text-foreground">
+        {tabsBody}
+      </div>
+    );
   }
 
   return (
-    <div
-      onClick={() => setShowSettings(false)}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(20, 16, 12, 0.36)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: isMobileLayout ? 0 : 18,
-        zIndex: 85,
-      }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: '100%',
-          maxWidth: isMobileLayout ? '100%' : 700,
-          height: isMobileLayout ? '100%' : 'auto',
-          display: 'flex',
-          justifyContent: 'center',
-        }}
+    <Dialog open={showSettings} onOpenChange={(open) => setShowSettings(open)}>
+      <DialogPopup
+        className="h-[min(88vh,624px)] max-h-full max-w-[560px] overflow-hidden"
+        closeProps={{ 'aria-label': '关闭设置' }}
       >
-        {content}
-      </div>
-    </div>
+        <DialogHeader className="shrink-0 px-4 pt-3.5 pb-1.5">
+          <DialogTitle className="text-[15px] font-semibold">设置</DialogTitle>
+        </DialogHeader>
+        {tabsBody}
+      </DialogPopup>
+    </Dialog>
   );
 };
 

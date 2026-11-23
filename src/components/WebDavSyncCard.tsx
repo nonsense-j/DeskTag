@@ -1,5 +1,26 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AlertCircle,
+  AlertTriangle,
+  CheckCircle2,
+  ChevronDown,
+  Cloud,
+  Copy,
+  Download,
+  Eye,
+  EyeOff,
+  FolderOpen,
+  GitCompareArrows,
+  Lock,
+  RefreshCw,
+  RotateCcw,
+  Save,
+  Settings2,
+  ShieldAlert,
+  Upload,
+  X,
+} from 'lucide-react';
+import {
   getWebdavConfig,
   getWebdavStatus,
   openSyncBackupDir,
@@ -22,6 +43,34 @@ import type {
   WebDavStatusView,
   WebDavTestResult,
 } from '../types/models';
+import { cn } from '@/lib/utils';
+import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import {
+  Card,
+  CardFrame,
+  CardFrameAction,
+  CardFrameHeader,
+  CardFrameTitle,
+  CardPanel,
+} from '@/components/ui/card';
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Field, FieldDescription, FieldError, FieldLabel } from '@/components/ui/field';
+import { Frame, FramePanel } from '@/components/ui/frame';
+import { Input } from '@/components/ui/input';
+import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group';
+import {
+  Select,
+  SelectItem,
+  SelectPopup,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Separator } from '@/components/ui/separator';
+import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 
 export interface WebDavSyncCardProps {
   /** Optional external status synced from store (events). */
@@ -84,12 +133,12 @@ const PROVIDER_PRESETS: ProviderPreset[] = [
   },
 ];
 
-const AUTO_SYNC_OPTIONS: { value: number; label: string }[] = [
-  { value: 0, label: '手动' },
-  { value: 3, label: '每 3 分钟' },
-  { value: 15, label: '每 15 分钟' },
-  { value: 30, label: '每 30 分钟' },
-  { value: 60, label: '每 60 分钟' },
+const AUTO_SYNC_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: '0', label: '手动' },
+  { value: '3', label: '每 3 分钟' },
+  { value: '15', label: '每 15 分钟' },
+  { value: '30', label: '每 30 分钟' },
+  { value: '60', label: '每 60 分钟' },
 ];
 
 function formatRelativeTime(iso: string | null): string {
@@ -119,17 +168,20 @@ function detectPresetId(url: string): string {
   return 'custom';
 }
 
-function actionLabel(action: string): { text: string; tone: 'up' | 'down' | 'conflict' | 'muted' } {
+function actionLabel(action: string): {
+  text: string;
+  variant: 'info' | 'success' | 'warning' | 'error' | 'secondary';
+} {
   const a = action.toLowerCase();
-  if (a.includes('conflict')) return { text: '冲突', tone: 'conflict' };
+  if (a.includes('conflict')) return { text: '冲突', variant: 'warning' };
   if (a.includes('upload') || a.includes('push') || a.includes('local')) {
-    return { text: '上传', tone: 'up' };
+    return { text: '上传', variant: 'info' };
   }
   if (a.includes('download') || a.includes('pull') || a.includes('remote')) {
-    return { text: '下载', tone: 'down' };
+    return { text: '下载', variant: 'success' };
   }
-  if (a.includes('delete')) return { text: '删除', tone: 'conflict' };
-  return { text: action, tone: 'muted' };
+  if (a.includes('delete')) return { text: '删除', variant: 'error' };
+  return { text: action, variant: 'secondary' };
 }
 
 function entityTypeLabel(entityType: string): string {
@@ -157,7 +209,8 @@ export const WebDavSyncCard: React.FC<WebDavSyncCardProps> = ({
 }) => {
   const [config, setConfig] = useState<WebDavConfigView | null>(null);
   const [status, setStatus] = useState<WebDavStatusView | null>(externalStatus ?? null);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   // Editable form state
   const [enabled, setEnabled] = useState(false);
@@ -287,7 +340,9 @@ export const WebDavSyncCard: React.FC<WebDavSyncCardProps> = ({
   };
 
   const activePreset = useMemo(
-    () => PROVIDER_PRESETS.find((p) => p.id === selectedPreset) ?? PROVIDER_PRESETS[PROVIDER_PRESETS.length - 1],
+    () =>
+      PROVIDER_PRESETS.find((p) => p.id === selectedPreset) ??
+      PROVIDER_PRESETS[PROVIDER_PRESETS.length - 1],
     [selectedPreset],
   );
 
@@ -357,7 +412,6 @@ export const WebDavSyncCard: React.FC<WebDavSyncCardProps> = ({
     setBusyAction('apply-preview');
     setFeedback(null);
     try {
-      // Persist current form first if user edited fields before previewing
       const saved = await saveWebdavConfig(buildInput(true));
       hydrateFromConfig(saved);
       const res = await webdavSyncPreviewed(preview.token);
@@ -550,656 +604,881 @@ export const WebDavSyncCard: React.FC<WebDavSyncCardProps> = ({
   const isReady = Boolean(status?.enabled && status?.configured);
   const hasE2ee = Boolean((config?.passphraseSet && !clearPassphrase) || passphrase.length > 0);
 
-  const statusDotColor = isSyncing
-    ? '#d4a741'
+  const statusDotClass = isSyncing
+    ? 'bg-warning animate-pulse'
     : hasError
-      ? '#e05552'
+      ? 'bg-destructive'
       : isReady
-        ? '#5b8c5a'
-        : '#9e988e';
+        ? 'bg-success'
+        : 'bg-muted-foreground/45';
 
-  const statusText = isSyncing
-    ? '正在同步…'
+  const nextSyncTime =
+    status?.nextAutoSyncAt && isReady && !isSyncing
+      ? new Date(status.nextAutoSyncAt).toLocaleTimeString('zh-CN', {
+          hour: '2-digit',
+          minute: '2-digit',
+        })
+      : null;
+
+  const statusSummaryText = isSyncing
+    ? '正在与云端同步…'
     : hasError
-      ? '同步异常'
+      ? '同步存在异常，请查看下方详情'
       : isReady
-        ? formatRelativeTime(status?.lastSyncAt ?? null)
+        ? `云端已同步 · ${formatRelativeTime(status?.lastSyncAt ?? null)}${nextSyncTime ? ` · 下次自动同步 ${nextSyncTime}` : ''}`
         : status?.configured
-          ? '已暂停同步'
-          : '未配置 WebDAV';
+          ? '已配置但当前已暂停自动同步'
+          : '尚未配置 WebDAV，选择服务商模板快速开始';
+
+  const statusAlertVariant: 'success' | 'error' | 'warning' | 'info' = hasError
+    ? status?.lastError
+      ? 'error'
+      : 'warning'
+    : isReady
+      ? 'success'
+      : 'info';
 
   return (
-    <div className="dt-settings-card dt-webdav-card">
-      {/* Top Status Row */}
-      <div className="dt-webdav-header">
-        <div className="dt-webdav-title-wrap">
-          <div className="dt-webdav-title-row">
-            <span
-              className={`dt-status-dot${isSyncing ? ' is-pulsing' : ''}`}
-              style={{ backgroundColor: statusDotColor }}
-              title={statusText}
-            />
-            <span className="dt-settings-card-title">WebDAV 云同步</span>
-            {hasE2ee && (
-              <span className="dt-e2ee-badge" title="AES-256-GCM + PBKDF2-SHA256 本地端到端加密">
-                🔒 AES-256-GCM 端到端加密
-              </span>
-            )}
-          </div>
-          <div className="dt-webdav-subtitle">
-            <span>{statusText}</span>
-            {status?.nextAutoSyncAt && isReady && !isSyncing && (
-              <span className="dt-webdav-meta-sep">
-                · 下次自动同步 {new Date(status.nextAutoSyncAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
-              </span>
-            )}
-          </div>
-        </div>
-
-        <div className="dt-webdav-header-actions">
-          <button
-            type="button"
-            className="dt-btn dt-btn-soft"
-            disabled={!status?.configured || busyAction !== null}
-            onClick={() => void handleSyncNow()}
-          >
-            {isSyncing ? '同步中…' : '立即同步'}
-          </button>
-          <button
-            type="button"
-            className="dt-btn dt-btn-ghost"
-            onClick={() => setExpanded((v) => !v)}
-          >
-            {expanded ? '收起' : '配置'}
-          </button>
-        </div>
-      </div>
-
-      {/* Inline backend hint */}
-      {status?.backendHint && (
-        <div className="dt-webdav-banner is-info">{status.backendHint}</div>
-      )}
-
-      {/* Inline error notice */}
-      {status?.lastError && (
-        <div className="dt-webdav-banner is-error">
-          <strong>同步错误：</strong>
-          <span>{status.lastError}</span>
-        </div>
-      )}
-
-      {/* Server file warning (Force Upload ONLY when canReplace === true) */}
-      {status?.serverFileWarning && (
-        <div className="dt-webdav-banner is-warning">
-          <div className="dt-webdav-banner-body">
-            <div>
-              <strong>远端文件警告 ({status.serverFileWarning.kind})：</strong>
-              <span>{status.serverFileWarning.message}</span>
-            </div>
-            {status.serverFileWarning.hint && (
-              <div className="dt-webdav-banner-hint">{status.serverFileWarning.hint}</div>
-            )}
-          </div>
-          {status.serverFileWarning.canReplace && (
-            <div className="dt-webdav-banner-actions">
-              {!confirmForceUpload ? (
-                <button
-                  type="button"
-                  className="dt-btn dt-btn-danger-soft"
-                  disabled={busyAction !== null}
-                  onClick={() => setConfirmForceUpload(true)}
-                >
-                  强制上传覆盖
-                </button>
-              ) : (
-                <div className="dt-inline-confirm">
-                  <span>确认用本机数据覆盖远端文件？（原文件将保留备份）</span>
-                  <button
-                    type="button"
-                    className="dt-btn dt-btn-danger"
-                    disabled={busyAction !== null}
-                    onClick={() => void handleForceUpload()}
-                  >
-                    确认覆盖
-                  </button>
-                  <button
-                    type="button"
-                    className="dt-btn dt-btn-ghost"
-                    onClick={() => setConfirmForceUpload(false)}
-                  >
-                    取消
-                  </button>
-                </div>
-              )}
-            </div>
+    <CardFrame>
+      {/* Top Single-Row Header */}
+      <CardFrameHeader className="items-center gap-x-2 py-2.5 px-3.5">
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+          <span
+            className={cn('inline-block size-2 shrink-0 rounded-full', statusDotClass)}
+            aria-hidden="true"
+          />
+          <CardFrameTitle className="text-[13.5px] font-semibold text-foreground">
+            WebDAV 云同步
+          </CardFrameTitle>
+          {hasE2ee && (
+            <Badge
+              variant="success"
+              size="sm"
+              className="gap-1 rounded-md px-1.5 py-0.5 text-[10.5px] font-medium"
+              title="AES-256-GCM + PBKDF2-SHA256 本地端到端加密"
+            >
+              <Lock className="size-2.5" />
+              <span>AES-256-GCM 端到端加密</span>
+            </Badge>
           )}
         </div>
-      )}
+        <CardFrameAction className="items-center gap-1">
+          <Button
+            size="sm"
+            variant="default"
+            loading={isSyncing}
+            disabled={!status?.configured || busyAction !== null}
+            onClick={() => void handleSyncNow()}
+            className="h-7 px-2.5 text-xs"
+          >
+            <RefreshCw className="size-3.5" />
+            <span>立即同步</span>
+          </Button>
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            onClick={() => setExpanded((v) => !v)}
+            aria-label={expanded ? '收起同步配置' : '展开同步配置'}
+            title={expanded ? '收起配置' : '展开配置'}
+            className="size-7 text-muted-foreground"
+          >
+            <ChevronDown
+              className={cn('size-4 transition-transform duration-150', expanded && 'rotate-180')}
+            />
+          </Button>
+        </CardFrameAction>
+      </CardFrameHeader>
 
-      {/* Conflict / Restore notice */}
-      {status?.conflictNotice && (
-        <div className="dt-webdav-banner is-warning">
-          <div className="dt-webdav-banner-body">
-            <div>
-              <strong>
+      <Card>
+        <CardPanel className="flex flex-col gap-3 p-3.5">
+          {/* Status Summary Alert Bar + Inline Test Connection */}
+          <Alert variant={statusAlertVariant} className="items-center px-3 py-2">
+            {statusAlertVariant === 'success' ? (
+              <CheckCircle2 className="size-3.5" />
+            ) : statusAlertVariant === 'error' ? (
+              <AlertCircle className="size-3.5" />
+            ) : statusAlertVariant === 'warning' ? (
+              <AlertTriangle className="size-3.5" />
+            ) : (
+              <Cloud className="size-3.5" />
+            )}
+            <AlertTitle className="text-xs font-medium leading-snug">
+              {statusSummaryText}
+            </AlertTitle>
+            <AlertAction>
+              <Button
+                size="xs"
+                variant="ghost"
+                disabled={busyAction !== null || !url.trim()}
+                loading={busyAction === 'test'}
+                onClick={() => void handleTestConnection()}
+                className={cn(
+                  'h-6 px-2 text-xs font-medium',
+                  statusAlertVariant === 'success' && 'text-success-foreground hover:bg-success/12',
+                )}
+              >
+                测试连接
+              </Button>
+            </AlertAction>
+          </Alert>
+
+          {/* Backend Runtime Hint */}
+          {status?.backendHint && (
+            <Alert variant="info" className="px-3 py-2">
+              <Cloud className="size-3.5" />
+              <AlertDescription className="text-xs text-foreground/85">
+                {status.backendHint}
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {/* Sync Error Notice */}
+          {status?.lastError && (
+            <Alert variant="error" className="px-3 py-2">
+              <AlertCircle className="size-3.5" />
+              <AlertTitle className="text-xs font-semibold text-destructive-foreground">
+                同步错误
+              </AlertTitle>
+              <AlertDescription className="text-xs text-destructive-foreground/90 break-words">
+                {status.lastError}
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {/* Server File Warning (Force Upload ONLY when canReplace === true) */}
+          {status?.serverFileWarning && (
+            <Alert variant="warning" className="px-3 py-2.5">
+              <ShieldAlert className="size-3.5" />
+              <AlertTitle className="text-xs font-semibold text-warning-foreground">
+                远端文件警告 ({status.serverFileWarning.kind})
+              </AlertTitle>
+              <AlertDescription className="gap-1.5 text-xs">
+                <span className="text-foreground/90">{status.serverFileWarning.message}</span>
+                {status.serverFileWarning.hint && (
+                  <span className="text-muted-foreground">{status.serverFileWarning.hint}</span>
+                )}
+                {status.serverFileWarning.canReplace && (
+                  <div className="pt-1">
+                    {!confirmForceUpload ? (
+                      <Button
+                        size="xs"
+                        variant="destructive-outline"
+                        disabled={busyAction !== null}
+                        onClick={() => setConfirmForceUpload(true)}
+                      >
+                        <Upload className="size-3" />
+                        <span>强制上传覆盖</span>
+                      </Button>
+                    ) : (
+                      <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-destructive/25 bg-destructive/6 p-2">
+                        <span className="text-xs text-foreground">
+                          确认用本机数据覆盖远端文件？（原文件将保留备份）
+                        </span>
+                        <div className="flex items-center gap-1.5 ms-auto">
+                          <Button
+                            size="xs"
+                            variant="destructive"
+                            disabled={busyAction !== null}
+                            loading={busyAction === 'force-upload'}
+                            onClick={() => void handleForceUpload()}
+                          >
+                            确认覆盖
+                          </Button>
+                          <Button
+                            size="xs"
+                            variant="ghost"
+                            onClick={() => setConfirmForceUpload(false)}
+                          >
+                            取消
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {/* Conflict / Restore Notice */}
+          {status?.conflictNotice && (
+            <Alert variant="warning" className="px-3 py-2">
+              <AlertTriangle className="size-3.5" />
+              <AlertTitle className="text-xs font-semibold">
                 {status.conflictNotice.restored
                   ? '已从云端恢复'
                   : status.conflictNotice.followed
                     ? '已跟随服务端'
                     : `同步合并提示（${status.conflictNotice.conflictCount} 项冲突已自动保留备份）`}
-              </strong>
-              <span className="dt-webdav-meta-sep"> · {formatRelativeTime(status.conflictNotice.at)}</span>
-            </div>
-            <div className="dt-webdav-banner-hint">{status.conflictNotice.summary}</div>
-          </div>
-          <button
-            type="button"
-            className="dt-btn dt-btn-soft dt-btn-xs"
-            onClick={() => void handleOpenSyncBackupDir()}
-          >
-            打开同步备份目录
-          </button>
-        </div>
-      )}
-
-      {/* Transient Feedback */}
-      {feedback && (
-        <div className={`dt-webdav-banner is-${feedback.kind}`}>
-          <span>{feedback.text}</span>
-          <button
-            type="button"
-            className="dt-icon-btn-xs"
-            aria-label="关闭提示"
-            onClick={() => setFeedback(null)}
-          >
-            ×
-          </button>
-        </div>
-      )}
-
-      {/* Expandable Configuration Form */}
-      {expanded && (
-        <div className="dt-webdav-form">
-          {/* Enable Switch */}
-          <label className="dt-webdav-toggle-row">
-            <div>
-              <div className="dt-field-label">启用 WebDAV 云同步</div>
-              <div className="dt-field-hint">
-                数据完全保存在你自己的网盘或 NAS 中，零订阅费，支持 Windows / macOS / Android 跨端合并
-              </div>
-            </div>
-            <input
-              type="checkbox"
-              className="dt-switch"
-              checked={enabled}
-              onChange={(e) => {
-                userToggledEnabledRef.current = true;
-                setEnabled(e.target.checked);
-              }}
-            />
-          </label>
-
-          {/* Provider Preset Chips */}
-          <div className="dt-field-group">
-            <div className="dt-field-label">快速选择服务商模板</div>
-            <div className="dt-preset-chips">
-              {PROVIDER_PRESETS.map((preset) => (
-                <button
-                  key={preset.id}
-                  type="button"
-                  className={`dt-chip${selectedPreset === preset.id ? ' is-active' : ''}`}
-                  onClick={() => handleSelectPreset(preset)}
+                <span className="ms-1.5 font-normal text-muted-foreground">
+                  · {formatRelativeTime(status.conflictNotice.at)}
+                </span>
+              </AlertTitle>
+              <AlertDescription className="text-xs">
+                {status.conflictNotice.summary}
+              </AlertDescription>
+              <AlertAction>
+                <Button
+                  size="xs"
+                  variant="outline"
+                  onClick={() => void handleOpenSyncBackupDir()}
                 >
-                  {preset.label}
-                </button>
-              ))}
-            </div>
-            <div className="dt-field-hint">{activePreset.hint}</div>
-          </div>
+                  打开备份目录
+                </Button>
+              </AlertAction>
+            </Alert>
+          )}
 
-          {/* URL & Remote Folder */}
-          <div className="dt-form-grid-2-1">
-            <label className="dt-field-group">
-              <span className="dt-field-label">WebDAV 服务器地址</span>
-              <input
-                type="url"
-                className="dt-input"
-                placeholder="https://dav.jianguoyun.com/dav/"
-                value={url}
-                onChange={(e) => {
-                  setUrl(e.target.value);
-                  setSelectedPreset(detectPresetId(e.target.value));
-                  setTestResult(null);
-                }}
-              />
-            </label>
-            <label className="dt-field-group">
-              <span className="dt-field-label">远程目录</span>
-              <input
-                type="text"
-                className="dt-input"
-                placeholder="desktag"
-                value={remoteDir}
-                onChange={(e) => setRemoteDir(e.target.value)}
-              />
-            </label>
-          </div>
+          {/* Transient Feedback Banner */}
+          {feedback && (
+            <Alert
+              variant={feedback.kind === 'error' ? 'error' : feedback.kind === 'success' ? 'success' : 'info'}
+              className="items-center px-3 py-2"
+            >
+              {feedback.kind === 'error' ? (
+                <AlertCircle className="size-3.5" />
+              ) : feedback.kind === 'success' ? (
+                <CheckCircle2 className="size-3.5" />
+              ) : (
+                <Cloud className="size-3.5" />
+              )}
+              <AlertDescription className="text-xs text-foreground">
+                {feedback.text}
+              </AlertDescription>
+              <AlertAction>
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  aria-label="关闭提示"
+                  onClick={() => setFeedback(null)}
+                >
+                  <X className="size-3" />
+                </Button>
+              </AlertAction>
+            </Alert>
+          )}
 
-          {/* Username & Password */}
-          <div className="dt-form-grid-2">
-            <label className="dt-field-group">
-              <span className="dt-field-label">用户名</span>
-              <input
-                type="text"
-                className="dt-input"
-                autoComplete="username"
-                placeholder="邮箱或 WebDAV 账号"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-              />
-            </label>
-
-            <div className="dt-field-group">
-              <div className="dt-field-label-row">
-                <span className="dt-field-label">密码 / 应用专用密码</span>
-                {config?.passwordSet && !clearPassword && !password && (
-                  <button
-                    type="button"
-                    className="dt-link-btn"
-                    onClick={() => setClearPassword(true)}
-                  >
-                    清除已存密码
-                  </button>
-                )}
-              </div>
-              <div className="dt-input-with-action">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  className="dt-input"
-                  autoComplete="current-password"
-                  placeholder={
-                    config?.passwordSet && !clearPassword
-                      ? '••••••••（已安全保存，留空保持不变）'
-                      : '请输入应用专用密码'
-                  }
-                  value={password}
-                  onChange={(e) => {
-                    setPassword(e.target.value);
-                    if (e.target.value) setClearPassword(false);
+          {/* Expandable Configuration Form */}
+          {expanded && (
+            <div className="flex flex-col gap-3">
+              {/* Enable Switch Row */}
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-[13px] font-semibold text-foreground">
+                    启用 WebDAV 云同步
+                  </div>
+                  <div className="mt-0.5 text-xs leading-snug text-muted-foreground">
+                    数据完全保存在个人网盘或 NAS，支持 Windows / macOS / Android 多端自动合并
+                  </div>
+                </div>
+                <Switch
+                  checked={enabled}
+                  onCheckedChange={(checked) => {
+                    userToggledEnabledRef.current = true;
+                    setEnabled(checked);
                   }}
-                />
-                <button
-                  type="button"
-                  className="dt-input-eye"
-                  onClick={() => setShowPassword((v) => !v)}
-                  title={showPassword ? '隐藏' : '显示'}
-                >
-                  {showPassword ? '隐' : '显'}
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Optional E2EE Passphrase */}
-          <div className="dt-field-group">
-            <div className="dt-field-label-row">
-              <span className="dt-field-label">
-                端到端加密口令（可选，强烈推荐）
-                <span className="dt-e2ee-badge-inline">AES-256-GCM 端到端加密</span>
-              </span>
-              {config?.passphraseSet && !clearPassphrase && !passphrase && (
-                <button
-                  type="button"
-                  className="dt-link-btn"
-                  onClick={() => setClearPassphrase(true)}
-                >
-                  取消加密口令
-                </button>
-              )}
-            </div>
-            <div className="dt-input-with-action">
-              <input
-                type={showPassphrase ? 'text' : 'password'}
-                className={`dt-input${passphraseEqualsPassword ? ' is-error' : ''}`}
-                autoComplete="new-password"
-                placeholder={
-                  config?.passphraseSet && !clearPassphrase
-                    ? '••••••••（已设置端到端加密口令，留空保持不变）'
-                    : '输入独立加密口令，所有设备需保持一致'
-                }
-                value={passphrase}
-                onChange={(e) => {
-                  setPassphrase(e.target.value);
-                  if (e.target.value) setClearPassphrase(false);
-                }}
-              />
-              <button
-                type="button"
-                className="dt-input-eye"
-                onClick={() => setShowPassphrase((v) => !v)}
-                title={showPassphrase ? '隐藏' : '显示'}
-              >
-                {showPassphrase ? '隐' : '显'}
-              </button>
-            </div>
-            {passphraseEqualsPassword ? (
-              <div className="dt-field-error">
-                安全警告：端到端加密口令不能与 WebDAV 登录密码相同（服务器收到登录密码后将能解密您的备份）。请换一个独立口令。
-              </div>
-            ) : (
-              <div className="dt-field-hint">
-                使用 PBKDF2-SHA256 + AES-256-GCM 在本地加密后上传；未填写时将仅以明文 JSON 同步。
-              </div>
-            )}
-          </div>
-
-          {/* Sync Frequency & Options */}
-          <div className="dt-webdav-options-grid">
-            <label className="dt-field-group">
-              <span className="dt-field-label">自动同步频率</span>
-              <select
-                className="dt-select"
-                value={autoSyncMinutes}
-                onChange={(e) => setAutoSyncMinutes(Number(e.target.value))}
-              >
-                {AUTO_SYNC_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="dt-check-row">
-              <input
-                type="checkbox"
-                checked={debouncePush}
-                onChange={(e) => setDebouncePush(e.target.checked)}
-              />
-              <span>
-                <strong>编辑后自动防抖推送</strong>
-                <small>修改待办或便签几秒后自动增量同步</small>
-              </span>
-            </label>
-
-            <label className="dt-check-row">
-              <input
-                type="checkbox"
-                checked={followServer}
-                onChange={(e) => setFollowServer(e.target.checked)}
-              />
-              <span>
-                <strong>仅跟随服务端 (FollowServer)</strong>
-                <small>只拉取云端更新，不把本机修改上传覆盖远端</small>
-              </span>
-            </label>
-          </div>
-
-          {/* Primary Action Buttons */}
-          <div className="dt-webdav-actions">
-            <button
-              type="button"
-              className="dt-btn dt-btn-soft"
-              disabled={busyAction !== null || !url.trim()}
-              onClick={() => void handleTestConnection()}
-            >
-              {busyAction === 'test' ? '测试中…' : '测试连接'}
-            </button>
-            <button
-              type="button"
-              className="dt-btn dt-btn-soft"
-              disabled={busyAction !== null || !url.trim() || passphraseEqualsPassword}
-              onClick={() => void handlePreview()}
-            >
-              {busyAction === 'preview' ? '计算差异…' : '预览变更'}
-            </button>
-            <button
-              type="button"
-              className="dt-btn dt-btn-primary"
-              disabled={busyAction !== null || passphraseEqualsPassword}
-              onClick={() => void handleSaveAndSync()}
-            >
-              {busyAction === 'save-sync'
-                ? enabled
-                  ? '保存并同步中…'
-                  : '保存中…'
-                : enabled
-                  ? '保存并同步'
-                  : '保存配置'}
-            </button>
-          </div>
-
-          {/* Test Connection Result */}
-          {testResult && (
-            <div className={`dt-webdav-test-result ${testResult.ok ? 'is-ok' : 'is-fail'}`}>
-              <div className="dt-webdav-test-top">
-                <span>
-                  {testResult.ok ? '✓ 连接成功' : '✕ 连接失败'}
-                  {testResult.statusCode !== null && ` (HTTP ${testResult.statusCode})`}
-                </span>
-                <span className="dt-webdav-latency">
-                  {testResult.latencyMs > 0 ? `${testResult.latencyMs} ms` : ''}
-                  {testResult.ok &&
-                    ` · ${testResult.remoteFileExists ? '已发现云端同步文件' : '云端尚无同步文件（首次同步将自动创建）'}`}
-                </span>
-              </div>
-              <div className="dt-webdav-test-msg">{testResult.message}</div>
-              {testResult.suggestedUrl && (
-                <div className="dt-suggested-url-row">
-                  <span>检测到建议地址：<code>{testResult.suggestedUrl}</code></span>
-                  <button
-                    type="button"
-                    className="dt-btn dt-btn-primary dt-btn-xs"
-                    onClick={() => handleApplySuggestedUrl(testResult.suggestedUrl!)}
-                  >
-                    一键应用此地址
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Live Preview Diff Panel */}
-          {preview && (
-            <div className="dt-webdav-preview-box">
-              <div className="dt-webdav-preview-head">
-                <div>
-                  <strong>同步变更预览</strong>
-                  <span className="dt-webdav-meta-sep"> · {preview.summary}</span>
-                </div>
-                <button
-                  type="button"
-                  className="dt-icon-btn-xs"
-                  onClick={() => setPreview(null)}
-                  aria-label="关闭预览"
-                >
-                  ×
-                </button>
-              </div>
-              <div className="dt-webdav-preview-stats">
-                <span className="dt-stat-pill is-up">上传 {preview.toUploadCount}</span>
-                <span className="dt-stat-pill is-down">下载 {preview.toDownloadCount}</span>
-                <span className="dt-stat-pill is-conflict">冲突 {preview.conflictCount}</span>
-              </div>
-              {preview.items.length > 0 && (
-                <ul className="dt-webdav-preview-list">
-                  {preview.items.slice(0, 30).map((item, idx) => {
-                    const badge = actionLabel(item.action);
-                    return (
-                      <li key={`${item.entityType}-${item.entityId}-${idx}`}>
-                        <span className={`dt-diff-tag is-${badge.tone}`}>{badge.text}</span>
-                        <span className="dt-diff-type">{entityTypeLabel(item.entityType)}</span>
-                        <span className="dt-diff-title">{item.title || item.entityId}</span>
-                      </li>
-                    );
-                  })}
-                  {preview.items.length > 30 && (
-                    <li className="dt-diff-more">其余 {preview.items.length - 30} 项已省略…</li>
-                  )}
-                </ul>
-              )}
-              <div className="dt-webdav-preview-footer">
-                <span className="dt-field-hint">校验令牌：{preview.token.slice(0, 12)}</span>
-                <div className="dt-webdav-preview-btns">
-                  <button
-                    type="button"
-                    className="dt-btn dt-btn-ghost dt-btn-xs"
-                    onClick={() => setPreview(null)}
-                  >
-                    取消
-                  </button>
-                  <button
-                    type="button"
-                    className="dt-btn dt-btn-primary dt-btn-xs"
-                    disabled={busyAction !== null}
-                    onClick={() => void handleApplyPreview()}
-                  >
-                    {busyAction === 'apply-preview' ? '应用中…' : '确认应用本次同步'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Advanced / Multi-device Row */}
-          <div className="dt-webdav-advanced">
-            <div className="dt-field-label">多设备快捷配置与恢复工具</div>
-            <div className="dt-webdav-advanced-btns">
-              <button
-                type="button"
-                className="dt-btn dt-btn-soft dt-btn-xs"
-                disabled={busyAction !== null || !status?.configured}
-                onClick={() => void handleExportSetup()}
-              >
-                复制同步配置
-              </button>
-              <button
-                type="button"
-                className="dt-btn dt-btn-soft dt-btn-xs"
-                disabled={busyAction !== null}
-                onClick={() => setShowImportPanel((v) => !v)}
-              >
-                粘贴导入配置
-              </button>
-              <button
-                type="button"
-                className="dt-btn dt-btn-soft dt-btn-xs"
-                disabled={busyAction !== null || !status?.canUndo}
-                onClick={() => void handleUndoSync(false)}
-                title={status?.canUndo ? '回滚到上次同步前的本机快照' : '暂无可撤销的同步快照'}
-              >
-                撤销上次同步
-              </button>
-              {needsForceUndo && (
-                <button
-                  type="button"
-                  className="dt-btn dt-btn-danger-soft dt-btn-xs"
-                  disabled={busyAction !== null}
-                  onClick={() => void handleUndoSync(true)}
-                >
-                  强制撤销
-                </button>
-              )}
-              <button
-                type="button"
-                className="dt-btn dt-btn-soft dt-btn-xs"
-                disabled={busyAction !== null || !status?.configured}
-                onClick={() => setConfirmRestore((v) => !v)}
-              >
-                从云端恢复
-              </button>
-              <button
-                type="button"
-                className="dt-btn dt-btn-ghost dt-btn-xs"
-                onClick={() => void handleOpenSyncBackupDir()}
-              >
-                打开同步备份目录
-              </button>
-            </div>
-
-            {/* Exported Setup Text Fallback Box */}
-            {exportedSetupText && (
-              <div className="dt-setup-box">
-                <div className="dt-field-label-row">
-                  <span className="dt-field-hint">已加密同步配置（仅含服务端凭据，不含加密口令本身）：</span>
-                  <button
-                    type="button"
-                    className="dt-link-btn"
-                    onClick={() => setExportedSetupText(null)}
-                  >
-                    收起
-                  </button>
-                </div>
-                <textarea
-                  readOnly
-                  className="dt-textarea dt-setup-textarea"
-                  rows={2}
-                  value={exportedSetupText}
-                  onFocus={(e) => e.currentTarget.select()}
+                  aria-label="启用 WebDAV 云同步"
                 />
               </div>
-            )}
 
-            {/* Paste & Import Setup Panel */}
-            {showImportPanel && (
-              <div className="dt-setup-box">
-                <div className="dt-field-label">粘贴来自其他设备的同步配置</div>
-                <textarea
-                  className="dt-textarea dt-setup-textarea"
-                  rows={2}
-                  placeholder="粘贴 desktag-sync:... 字符串"
-                  value={importText}
-                  onChange={(e) => setImportText(e.target.value)}
-                />
-                <div className="dt-import-row">
-                  <input
-                    type="password"
-                    className="dt-input"
-                    placeholder="输入对应的端到端加密口令（若未设加密可留空）"
-                    value={importPassphrase}
-                    onChange={(e) => setImportPassphrase(e.target.value)}
+              <Separator />
+
+              {/* Provider Presets */}
+              <div className="flex flex-col gap-1.5">
+                <span className="text-xs font-medium text-foreground">服务商模板</span>
+                <ToggleGroup
+                  value={[selectedPreset]}
+                  onValueChange={(vals) => {
+                    const next = vals[vals.length - 1];
+                    const preset = PROVIDER_PRESETS.find((p) => p.id === next);
+                    if (preset) handleSelectPreset(preset);
+                  }}
+                  className="flex w-full flex-wrap gap-1.5"
+                >
+                  {PROVIDER_PRESETS.map((preset) => (
+                    <ToggleGroupItem
+                      key={preset.id}
+                      value={preset.id}
+                      size="sm"
+                      className="h-7 rounded-lg border-input bg-background px-2.5 text-xs font-medium text-foreground shadow-xs/5 hover:bg-accent/60 data-pressed:border-primary data-pressed:bg-primary data-pressed:text-primary-foreground data-pressed:shadow-xs data-pressed:hover:bg-primary/90 dark:bg-input/32 dark:data-pressed:bg-primary"
+                    >
+                      {preset.label}
+                    </ToggleGroupItem>
+                  ))}
+                </ToggleGroup>
+                <p className="text-[11.5px] leading-relaxed text-muted-foreground">
+                  {activePreset.hint}
+                </p>
+              </div>
+
+              {/* Row 1: Server URL & Remote Directory */}
+              <div className="grid grid-cols-1 gap-2.5 min-[380px]:grid-cols-[1.65fr_1fr]">
+                <Field>
+                  <FieldLabel className="text-xs">服务器地址</FieldLabel>
+                  <Input
+                    size="sm"
+                    type="url"
+                    placeholder="https://dav.jianguoyun.com/dav/"
+                    value={url}
+                    onChange={(e) => {
+                      setUrl(e.target.value);
+                      setSelectedPreset(detectPresetId(e.target.value));
+                      setTestResult(null);
+                    }}
                   />
-                  <button
-                    type="button"
-                    className="dt-btn dt-btn-primary dt-btn-xs"
-                    disabled={busyAction !== null}
-                    onClick={() => void handleImportSetup()}
-                  >
-                    {busyAction === 'import-setup' ? '导入中…' : '解密并导入'}
-                  </button>
-                </div>
+                </Field>
+                <Field>
+                  <FieldLabel className="text-xs">远程目录</FieldLabel>
+                  <Input
+                    size="sm"
+                    type="text"
+                    placeholder="desktag"
+                    value={remoteDir}
+                    onChange={(e) => setRemoteDir(e.target.value)}
+                  />
+                </Field>
               </div>
-            )}
 
-            {/* Confirm Restore From Server */}
-            {confirmRestore && (
-              <div className="dt-inline-confirm dt-setup-box">
-                <span>
-                  确认从云端全量恢复并覆盖本机当前数据？（系统会先将本机数据备份至同步备份目录）
-                </span>
-                <div className="dt-inline-confirm-btns">
-                  <button
-                    type="button"
-                    className="dt-btn dt-btn-danger dt-btn-xs"
-                    disabled={busyAction !== null}
-                    onClick={() => void handleRestoreFromServer()}
-                  >
-                    {busyAction === 'restore' ? '恢复中…' : '确认从云端恢复'}
-                  </button>
-                  <button
-                    type="button"
-                    className="dt-btn dt-btn-ghost dt-btn-xs"
-                    onClick={() => setConfirmRestore(false)}
-                  >
-                    取消
-                  </button>
-                </div>
+              {/* Row 2: Username & App Password */}
+              <div className="grid grid-cols-1 gap-2.5 min-[380px]:grid-cols-2">
+                <Field>
+                  <FieldLabel className="text-xs">用户名</FieldLabel>
+                  <Input
+                    size="sm"
+                    type="text"
+                    autoComplete="username"
+                    placeholder="邮箱或 WebDAV 账号"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                  />
+                </Field>
+
+                <Field>
+                  <div className="flex w-full items-center justify-between gap-2">
+                    <FieldLabel className="text-xs">应用密码</FieldLabel>
+                    {config?.passwordSet && !clearPassword && !password && (
+                      <button
+                        type="button"
+                        className="text-[11px] font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline cursor-pointer"
+                        onClick={() => setClearPassword(true)}
+                      >
+                        清除已存密码
+                      </button>
+                    )}
+                  </div>
+                  <InputGroup>
+                    <InputGroupInput
+                      size="sm"
+                      type={showPassword ? 'text' : 'password'}
+                      autoComplete="current-password"
+                      placeholder={
+                        config?.passwordSet && !clearPassword
+                          ? '••••••••（留空不变）'
+                          : '应用专用密码'
+                      }
+                      value={password}
+                      onChange={(e) => {
+                        setPassword(e.target.value);
+                        if (e.target.value) setClearPassword(false);
+                      }}
+                    />
+                    <InputGroupAddon align="inline-end">
+                      <Button
+                        size="icon-xs"
+                        variant="ghost"
+                        onClick={() => setShowPassword((v) => !v)}
+                        aria-label={showPassword ? '隐藏密码' : '显示密码'}
+                        title={showPassword ? '隐藏密码' : '显示密码'}
+                      >
+                        {showPassword ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+                      </Button>
+                    </InputGroupAddon>
+                  </InputGroup>
+                </Field>
               </div>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
+
+              {/* Row 3: Optional E2EE Passphrase */}
+              <Field invalid={passphraseEqualsPassword}>
+                <div className="flex w-full items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <FieldLabel className="text-xs">端到端加密口令</FieldLabel>
+                    {hasE2ee ? (
+                      <Badge variant="success" size="sm">
+                        已加密
+                      </Badge>
+                    ) : (
+                      <Badge variant="secondary" size="sm">
+                        可选·推荐
+                      </Badge>
+                    )}
+                  </div>
+                  {config?.passphraseSet && !clearPassphrase && !passphrase && (
+                    <button
+                      type="button"
+                      className="text-[11px] font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline cursor-pointer"
+                      onClick={() => setClearPassphrase(true)}
+                    >
+                      取消加密口令
+                    </button>
+                  )}
+                </div>
+                <InputGroup>
+                  <InputGroupInput
+                    size="sm"
+                    type={showPassphrase ? 'text' : 'password'}
+                    autoComplete="new-password"
+                    aria-invalid={passphraseEqualsPassword || undefined}
+                    placeholder={
+                      config?.passphraseSet && !clearPassphrase
+                        ? '••••••••（已设置加密口令，留空保持不变）'
+                        : '输入独立加密口令，所有设备需保持一致'
+                    }
+                    value={passphrase}
+                    onChange={(e) => {
+                      setPassphrase(e.target.value);
+                      if (e.target.value) setClearPassphrase(false);
+                    }}
+                  />
+                  <InputGroupAddon align="inline-end">
+                    <Button
+                      size="icon-xs"
+                      variant="ghost"
+                      onClick={() => setShowPassphrase((v) => !v)}
+                      aria-label={showPassphrase ? '隐藏口令' : '显示口令'}
+                      title={showPassphrase ? '隐藏口令' : '显示口令'}
+                    >
+                      {showPassphrase ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+                    </Button>
+                  </InputGroupAddon>
+                </InputGroup>
+                {passphraseEqualsPassword ? (
+                  <FieldError match={true}>
+                    安全警告：端到端加密口令不能与 WebDAV 登录密码相同，请换一个独立口令。
+                  </FieldError>
+                ) : (
+                  <FieldDescription className="text-[11.5px]">
+                    使用 PBKDF2-SHA256 + AES-256-GCM 在本地加密后上传；留空时以明文 JSON 同步。
+                  </FieldDescription>
+                )}
+              </Field>
+
+              {/* Auto-Sync Interval Row */}
+              <div className="flex items-center justify-between gap-3 pt-0.5">
+                <span className="text-xs font-medium text-foreground">后台自动同步间隔</span>
+                <Select
+                  items={AUTO_SYNC_OPTIONS}
+                  value={String(autoSyncMinutes)}
+                  onValueChange={(val) => {
+                    if (val !== null) setAutoSyncMinutes(Number(val));
+                  }}
+                >
+                  <SelectTrigger size="sm" className="w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectPopup align="end" alignItemWithTrigger={false}>
+                    {AUTO_SYNC_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectPopup>
+                </Select>
+              </div>
+
+              {/* Primary Action Bar */}
+              <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  loading={busyAction === 'preview'}
+                  disabled={busyAction !== null || !url.trim() || passphraseEqualsPassword}
+                  onClick={() => void handlePreview()}
+                  className="text-xs"
+                >
+                  <GitCompareArrows className="size-3.5" />
+                  <span>预览差异</span>
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  loading={busyAction === 'export-setup'}
+                  disabled={busyAction !== null || !status?.configured}
+                  onClick={() => void handleExportSetup()}
+                  className="text-xs"
+                >
+                  <Copy className="size-3.5" />
+                  <span>导出配置码</span>
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={busyAction !== null}
+                  onClick={() => setShowImportPanel((v) => !v)}
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                >
+                  <Download className="size-3.5" />
+                  <span>导入配置码</span>
+                </Button>
+                <Button
+                  size="sm"
+                  variant="default"
+                  loading={busyAction === 'save-sync'}
+                  disabled={busyAction !== null || passphraseEqualsPassword}
+                  onClick={() => void handleSaveAndSync()}
+                  className="ms-auto text-xs"
+                >
+                  <Save className="size-3.5" />
+                  <span>{enabled ? '保存并同步' : '保存配置'}</span>
+                </Button>
+              </div>
+
+              {/* Test Connection Result */}
+              {testResult && (
+                <Alert variant={testResult.ok ? 'success' : 'error'} className="px-3 py-2.5">
+                  {testResult.ok ? (
+                    <CheckCircle2 className="size-3.5" />
+                  ) : (
+                    <AlertCircle className="size-3.5" />
+                  )}
+                  <AlertTitle className="flex flex-wrap items-center justify-between gap-2 text-xs font-semibold">
+                    <span>
+                      {testResult.ok ? '连接成功' : '连接失败'}
+                      {testResult.statusCode !== null && ` (HTTP ${testResult.statusCode})`}
+                    </span>
+                    <span className="font-normal tabular-nums text-muted-foreground">
+                      {testResult.latencyMs > 0 ? `${testResult.latencyMs} ms` : ''}
+                      {testResult.ok &&
+                        ` · ${testResult.remoteFileExists ? '已发现云端同步文件' : '首次同步将自动创建'}`}
+                    </span>
+                  </AlertTitle>
+                  <AlertDescription className="gap-2 text-xs">
+                    <span className="break-words text-foreground/90">{testResult.message}</span>
+                    {testResult.suggestedUrl && (
+                      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-card/80 px-2.5 py-1.5">
+                        <span className="min-w-0 break-all text-xs text-muted-foreground">
+                          建议地址：
+                          <code className="ms-1 font-mono text-foreground">
+                            {testResult.suggestedUrl}
+                          </code>
+                        </span>
+                        <Button
+                          size="xs"
+                          variant="default"
+                          onClick={() => handleApplySuggestedUrl(testResult.suggestedUrl!)}
+                        >
+                          一键应用
+                        </Button>
+                      </div>
+                    )}
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {/* Live Preview Diff Panel */}
+              {preview && (
+                <Frame>
+                  <FramePanel className="flex flex-col gap-2.5 p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="text-xs font-semibold text-foreground">同步变更预览</div>
+                        <div className="mt-0.5 text-[11.5px] text-muted-foreground">
+                          {preview.summary}
+                        </div>
+                      </div>
+                      <Button
+                        size="icon-xs"
+                        variant="ghost"
+                        onClick={() => setPreview(null)}
+                        aria-label="关闭预览"
+                      >
+                        <X className="size-3.5" />
+                      </Button>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <Badge variant="info" size="sm">
+                        上传 {preview.toUploadCount}
+                      </Badge>
+                      <Badge variant="success" size="sm">
+                        下载 {preview.toDownloadCount}
+                      </Badge>
+                      <Badge variant={preview.conflictCount > 0 ? 'warning' : 'secondary'} size="sm">
+                        冲突 {preview.conflictCount}
+                      </Badge>
+                    </div>
+
+                    {preview.items.length > 0 && (
+                      <ul className="flex max-h-40 flex-col gap-1 overflow-y-auto rounded-lg border border-border bg-background/60 p-1.5">
+                        {preview.items.slice(0, 30).map((item, idx) => {
+                          const badge = actionLabel(item.action);
+                          return (
+                            <li
+                              key={`${item.entityType}-${item.entityId}-${idx}`}
+                              className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-xs"
+                            >
+                              <Badge variant={badge.variant} size="sm" className="shrink-0">
+                                {badge.text}
+                              </Badge>
+                              <span className="shrink-0 text-[11px] text-muted-foreground">
+                                {entityTypeLabel(item.entityType)}
+                              </span>
+                              <span className="min-w-0 flex-1 truncate text-foreground">
+                                {item.title || item.entityId}
+                              </span>
+                            </li>
+                          );
+                        })}
+                        {preview.items.length > 30 && (
+                          <li className="px-1.5 py-1 text-[11px] text-muted-foreground">
+                            其余 {preview.items.length - 30} 项已省略…
+                          </li>
+                        )}
+                      </ul>
+                    )}
+
+                    <div className="flex items-center justify-between gap-2 pt-0.5">
+                      <span className="font-mono text-[11px] text-muted-foreground">
+                        令牌：{preview.token.slice(0, 12)}
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <Button size="xs" variant="ghost" onClick={() => setPreview(null)}>
+                          取消
+                        </Button>
+                        <Button
+                          size="xs"
+                          variant="default"
+                          loading={busyAction === 'apply-preview'}
+                          disabled={busyAction !== null}
+                          onClick={() => void handleApplyPreview()}
+                        >
+                          确认应用本次同步
+                        </Button>
+                      </div>
+                    </div>
+                  </FramePanel>
+                </Frame>
+              )}
+
+              {/* Exported Setup Code Panel */}
+              {exportedSetupText && (
+                <div className="flex flex-col gap-1.5 rounded-xl border border-border bg-coss-frame-well p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11.5px] text-muted-foreground">
+                      已加密同步配置码（仅含服务端凭据，不含加密口令本身）
+                    </span>
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      onClick={() => setExportedSetupText(null)}
+                    >
+                      收起
+                    </Button>
+                  </div>
+                  <Textarea
+                    readOnly
+                    size="sm"
+                    rows={2}
+                    className="font-mono text-xs"
+                    value={exportedSetupText}
+                    onFocus={(e) => e.currentTarget.select()}
+                  />
+                </div>
+              )}
+
+              {/* Paste & Import Setup Code Panel */}
+              {showImportPanel && (
+                <div className="flex flex-col gap-2 rounded-xl border border-border bg-coss-frame-well p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-medium text-foreground">
+                      粘贴来自其他设备的同步配置码
+                    </span>
+                    <Button
+                      size="icon-xs"
+                      variant="ghost"
+                      aria-label="关闭导入面板"
+                      onClick={() => setShowImportPanel(false)}
+                    >
+                      <X className="size-3.5" />
+                    </Button>
+                  </div>
+                  <Textarea
+                    size="sm"
+                    rows={2}
+                    className="font-mono text-xs"
+                    placeholder="粘贴 desktag-sync:... 字符串"
+                    value={importText}
+                    onChange={(e) => setImportText(e.target.value)}
+                  />
+                  <div className="flex flex-col gap-2 min-[380px]:flex-row min-[380px]:items-center">
+                    <Input
+                      size="sm"
+                      type="password"
+                      placeholder="输入对应的端到端加密口令（未加密可留空）"
+                      value={importPassphrase}
+                      onChange={(e) => setImportPassphrase(e.target.value)}
+                      className="flex-1"
+                    />
+                    <Button
+                      size="sm"
+                      variant="default"
+                      loading={busyAction === 'import-setup'}
+                      disabled={busyAction !== null}
+                      onClick={() => void handleImportSetup()}
+                      className="shrink-0 text-xs"
+                    >
+                      解密并导入
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              <Separator />
+
+              {/* Collapsible Advanced Sync Options & Recovery Tools */}
+              <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
+                <CollapsibleTrigger
+                  render={
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      className="w-full justify-between px-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+                    />
+                  }
+                >
+                  <span className="inline-flex items-center gap-1.5">
+                    <Settings2 className="size-3.5" />
+                    <span>高级同步选项与恢复工具</span>
+                  </span>
+                  <ChevronDown
+                    className={cn(
+                      'size-3.5 transition-transform duration-150',
+                      advancedOpen && 'rotate-180',
+                    )}
+                  />
+                </CollapsibleTrigger>
+
+                <CollapsiblePanel>
+                  <div className="flex flex-col gap-2.5 pt-2.5">
+                    {/* Debounce Push Switch */}
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-xs font-medium text-foreground">
+                          编辑后自动防抖推送
+                        </div>
+                        <div className="text-[11.5px] text-muted-foreground">
+                          修改待办或便签几秒后自动增量同步
+                        </div>
+                      </div>
+                      <Switch
+                        checked={debouncePush}
+                        onCheckedChange={setDebouncePush}
+                        aria-label="编辑后自动防抖推送"
+                      />
+                    </div>
+
+                    {/* Follow Server Switch */}
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-xs font-medium text-foreground">
+                          仅跟随服务端 (FollowServer)
+                        </div>
+                        <div className="text-[11.5px] text-muted-foreground">
+                          只拉取云端更新，不把本机修改上传覆盖远端
+                        </div>
+                      </div>
+                      <Switch
+                        checked={followServer}
+                        onCheckedChange={setFollowServer}
+                        aria-label="仅跟随服务端"
+                      />
+                    </div>
+
+                    <Separator />
+
+                    {/* Recovery Action Buttons */}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        disabled={busyAction !== null || !status?.canUndo}
+                        loading={busyAction === 'undo'}
+                        onClick={() => void handleUndoSync(false)}
+                        title={
+                          status?.canUndo ? '回滚到上次同步前的本机快照' : '暂无可撤销的同步快照'
+                        }
+                      >
+                        <RotateCcw className="size-3" />
+                        <span>撤销上次同步</span>
+                      </Button>
+
+                      {needsForceUndo && (
+                        <Button
+                          size="xs"
+                          variant="destructive-outline"
+                          disabled={busyAction !== null}
+                          onClick={() => void handleUndoSync(true)}
+                        >
+                          强制撤销
+                        </Button>
+                      )}
+
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        disabled={busyAction !== null || !status?.configured}
+                        onClick={() => setConfirmRestore((v) => !v)}
+                      >
+                        <Download className="size-3" />
+                        <span>从云端恢复</span>
+                      </Button>
+
+                      <Button
+                        size="xs"
+                        variant="ghost"
+                        onClick={() => void handleOpenSyncBackupDir()}
+                      >
+                        <FolderOpen className="size-3" />
+                        <span>同步备份目录</span>
+                      </Button>
+                    </div>
+
+                    {/* Confirm Restore From Server */}
+                    {confirmRestore && (
+                      <Alert variant="warning" className="px-3 py-2.5">
+                        <AlertTriangle className="size-3.5" />
+                        <AlertDescription className="gap-2 text-xs">
+                          <span className="text-foreground">
+                            确认从云端全量恢复并覆盖本机当前数据？（系统会先将本机数据备份至同步备份目录）
+                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <Button
+                              size="xs"
+                              variant="destructive"
+                              loading={busyAction === 'restore'}
+                              disabled={busyAction !== null}
+                              onClick={() => void handleRestoreFromServer()}
+                            >
+                              确认从云端恢复
+                            </Button>
+                            <Button
+                              size="xs"
+                              variant="ghost"
+                              onClick={() => setConfirmRestore(false)}
+                            >
+                              取消
+                            </Button>
+                          </div>
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                  </div>
+                </CollapsiblePanel>
+              </Collapsible>
+            </div>
+          )}
+        </CardPanel>
+      </Card>
+    </CardFrame>
   );
 };
 

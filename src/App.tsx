@@ -1,21 +1,30 @@
-import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
-import { isTauriRuntime } from './api/tauri';
-import { ErrorBoundary } from './components/ErrorBoundary';
 import {
   ArrowLeftIcon,
   CalendarIcon,
-  CloseIcon,
-  ListIcon,
+  LayoutGridIcon,
+  ListTodoIcon,
   PlusIcon,
-  QuadrantIcon,
-} from './components/Icons';
+  SparklesIcon,
+  XIcon,
+} from 'lucide-react';
+import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
+import { isTauriRuntime } from './api/tauri';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { ListManagerModal } from './components/ListManagerModal';
 import { MobileBottomNav, MobileTopHeader } from './components/MobileNav';
 import { PanelHeader } from './components/PanelHeader';
+import { PortalProvider } from './components/PortalContext';
 import { ReminderModal } from './components/ReminderModal';
 import { SideTabRail } from './components/SideTabRail';
 import { TodoDetailModal } from './components/TodoDetailModal';
 import { TodoView } from './components/TodoView';
+import { Badge } from './components/ui/badge';
+import { Button } from './components/ui/button';
+import { Empty, EmptyContent, EmptyMedia, EmptyTitle } from './components/ui/empty';
+import { SegmentedControl, SegmentedControlItem } from './components/ui/segmented-control';
+import { Spinner } from './components/ui/spinner';
+import { AnchoredToastProvider, ToastProvider } from './components/ui/toast';
+import { TooltipProvider } from './components/ui/tooltip';
 import { DeskTagProvider, useDeskTagStore } from './store/useDeskTagStore';
 
 const CalendarView = lazy(() => import('./components/CalendarView'));
@@ -61,68 +70,41 @@ const StandaloneLoadingFallback: React.FC<{ title: string }> = ({ title }) => {
   };
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        width: '100%',
-        height: '100%',
-        minHeight: 0,
-        background: 'var(--bg-panel)',
-        color: 'var(--text-primary)',
-        overflow: 'hidden',
-      }}
-    >
+    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-background text-foreground">
       <header
         data-tauri-drag-region
-        style={{
-          height: 40,
-          flexShrink: 0,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '0 10px 0 14px',
-          background: 'var(--bg-header)',
-          borderBottom: '1px solid var(--border)',
-          userSelect: 'none',
-        }}
+        className="flex h-10 shrink-0 select-none items-center justify-between border-b bg-sidebar px-3"
       >
-        <span data-tauri-drag-region style={{ fontWeight: 600, fontSize: 13.5 }}>
+        <span data-tauri-drag-region className="font-semibold text-sm text-foreground">
           {title}
         </span>
-        <button
-          type="button"
-          title="关闭窗口"
+        <Button
           aria-label="关闭窗口"
           onClick={() => void handleClose()}
-          style={{
-            width: 28,
-            height: 28,
-            border: 'none',
-            borderRadius: 7,
-            background: 'transparent',
-            color: 'var(--text-secondary)',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-          }}
+          size="icon-xs"
+          title="关闭窗口"
+          variant="ghost"
         >
-          <CloseIcon size={14} />
-        </button>
+          <XIcon aria-hidden="true" />
+        </Button>
       </header>
-      <div
-        style={{
-          flex: 1,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: 'var(--text-muted)',
-          fontSize: 13,
-        }}
-      >
-        正在加载…
+      <div className="flex flex-1 items-center justify-center gap-2 text-muted-foreground text-sm">
+        <Spinner className="size-4" />
+        <span>正在加载…</span>
       </div>
+    </div>
+  );
+};
+
+const FloatingToastPill: React.FC<{ message: string | null }> = ({ message }) => {
+  if (!message) return null;
+  return (
+    <div
+      aria-live="polite"
+      className="pointer-events-none absolute bottom-3 left-1/2 z-60 max-w-[calc(100%-24px)] -translate-x-1/2 truncate rounded-lg border bg-popover not-dark:bg-clip-padding px-3 py-1.5 font-medium text-popover-foreground text-xs shadow-lg/5 before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-lg)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] dark:before:shadow-[0_-1px_--theme(--color-white/6%)]"
+      role="status"
+    >
+      {message}
     </div>
   );
 };
@@ -168,6 +150,9 @@ const DeskTagShell: React.FC = () => {
   } = useDeskTagStore();
 
   const route = useMemo(() => parseWindowRoute(), []);
+
+  // Scoped shell portal container (keeps Base UI overlays clipped cleanly inside rounded frameless window)
+  const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null);
 
   // Settings initial tab override (e.g. jump directly to About from update banner / menu)
   const [settingsInitialTab, setSettingsInitialTab] = useState<'about' | undefined>(undefined);
@@ -285,20 +270,14 @@ const DeskTagShell: React.FC = () => {
     }
     return (
       <div
-        style={{
-          width: '100%',
-          height: '100%',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          background: 'var(--bg-panel)',
-          color: 'var(--text-muted)',
-          borderRadius: isMobileLayout ? 0 : 14,
-          border: isMobileLayout ? 'none' : '1px solid var(--border)',
-          fontSize: 13,
-        }}
+        className={
+          isMobileLayout
+            ? 'flex h-full w-full items-center justify-center gap-2 bg-background text-muted-foreground text-sm'
+            : 'flex h-full w-full items-center justify-center gap-2 rounded-[var(--radius-panel)] border bg-background text-muted-foreground text-sm shadow-xs/5'
+        }
       >
-        正在加载 DeskTag…
+        <Spinner className="size-4" />
+        <span>正在加载 DeskTag…</span>
       </div>
     );
   }
@@ -309,12 +288,23 @@ const DeskTagShell: React.FC = () => {
   if (route.kind === 'calendar') {
     return (
       <ErrorBoundary route="calendar" title="DeskTag — 日历视图">
-        <Suspense fallback={<StandaloneLoadingFallback title="日历视图" />}>
-          <CalendarView standalone />
-        </Suspense>
-        <TodoDetailModal />
-        <ReminderModal />
-        {toastMessage && <div className="desktag-toast">{toastMessage}</div>}
+        <div
+          ref={setPortalContainer}
+          className="isolate relative flex h-full w-full flex-col overflow-hidden bg-background text-foreground"
+        >
+          <PortalProvider container={portalContainer}>
+            <ToastProvider>
+              <AnchoredToastProvider>
+                <Suspense fallback={<StandaloneLoadingFallback title="日历视图" />}>
+                  <CalendarView standalone />
+                </Suspense>
+                <TodoDetailModal />
+                <ReminderModal />
+                <FloatingToastPill message={toastMessage} />
+              </AnchoredToastProvider>
+            </ToastProvider>
+          </PortalProvider>
+        </div>
       </ErrorBoundary>
     );
   }
@@ -326,45 +316,62 @@ const DeskTagShell: React.FC = () => {
     const resolvedNoteId = route.noteId || activeNotes[0]?.id || '';
     return (
       <ErrorBoundary route="note" title="DeskTag — 独立便签">
-        <Suspense fallback={<StandaloneLoadingFallback title="独立便签" />}>
-          <NoteView noteId={resolvedNoteId} standalone />
-        </Suspense>
-        <TodoDetailModal />
-        <ReminderModal />
-        {toastMessage && <div className="desktag-toast">{toastMessage}</div>}
+        <div
+          ref={setPortalContainer}
+          className="isolate relative flex h-full w-full flex-col overflow-hidden bg-background text-foreground"
+        >
+          <PortalProvider container={portalContainer}>
+            <ToastProvider>
+              <AnchoredToastProvider>
+                <Suspense fallback={<StandaloneLoadingFallback title="独立便签" />}>
+                  <NoteView noteId={resolvedNoteId} standalone />
+                </Suspense>
+                <TodoDetailModal />
+                <ReminderModal />
+                <FloatingToastPill message={toastMessage} />
+              </AnchoredToastProvider>
+            </ToastProvider>
+          </PortalProvider>
+        </div>
       </ErrorBoundary>
     );
   }
 
-  // Shared non-intrusive update banner (shown at top of panel body when an unignored update exists)
+  // Shared non-intrusive update banner (coss ui styled)
   const updateBannerNode =
     hasUnignoredUpdate && !updateBannerDismissed && updateResult ? (
-      <div className="dt-update-banner" role="status" aria-live="polite">
-        <span className="dt-update-banner-text">发现新版本 v{updateResult.latestVersion}</span>
-        <div className="dt-update-banner-actions">
-          <button
-            type="button"
-            className="dt-btn dt-btn-primary dt-btn-xs"
-            onClick={handleOpenSettingsAbout}
-          >
+      <div
+        aria-live="polite"
+        className="flex shrink-0 items-center justify-between gap-2 border-b bg-sidebar px-3 py-1.5 text-xs"
+        role="status"
+      >
+        <div className="flex min-w-0 items-center gap-1.5">
+          <SparklesIcon aria-hidden="true" className="size-3.5 shrink-0 text-primary opacity-80" />
+          <span className="truncate font-medium text-foreground">发现新版本</span>
+          <Badge size="sm" variant="info">
+            v{updateResult.latestVersion}
+          </Badge>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <Button onClick={handleOpenSettingsAbout} size="xs" variant="default">
             查看更新
-          </button>
-          <button
-            type="button"
-            className="dt-link-btn"
+          </Button>
+          <Button
             onClick={() => void skipUpdateVersion(updateResult.latestVersion)}
+            size="xs"
+            variant="ghost"
           >
-            跳过此版本
-          </button>
-          <button
-            type="button"
-            className="dt-icon-btn-xs"
-            title="暂不提示"
+            跳过
+          </Button>
+          <Button
             aria-label="关闭更新提示"
             onClick={dismissUpdateBanner}
+            size="icon-xs"
+            title="暂不提示"
+            variant="ghost"
           >
-            ×
-          </button>
+            <XIcon aria-hidden="true" />
+          </Button>
         </div>
       </div>
     ) : null;
@@ -401,315 +408,190 @@ const DeskTagShell: React.FC = () => {
     };
 
     return (
-      <div className="desktag-shell is-mobile">
-        <MobileTopHeader />
+      <div
+        ref={setPortalContainer}
+        className="desktag-shell is-mobile isolate relative overflow-hidden"
+      >
+        <PortalProvider container={portalContainer}>
+          <ToastProvider>
+            <AnchoredToastProvider>
+              <MobileTopHeader />
 
-        {pullOffset > 12 && (
-          <div
-            style={{
-              height: Math.min(36, pullOffset),
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: 11.5,
-              color: 'var(--accent)',
-              background: 'var(--bg-header)',
-              borderBottom: '1px solid var(--border)',
-              flexShrink: 0,
-            }}
-          >
-            {webdavStatus.configured
-              ? pullOffset >= 44
-                ? '松开立即触发 WebDAV 同步'
-                : '下拉同步云端数据…'
-              : '可在「设置 → 数据与同步」配置 WebDAV'}
-          </div>
-        )}
-
-        <div
-          ref={mobileBodyRef}
-          className="desktag-panel-body"
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
-        >
-          {updateBannerNode}
-
-          <Suspense fallback={null}>
-            {/* Mobile Tab 1: 待办 */}
-            {mobileSection === 'todo' && (showQuadrant ? <QuadrantView /> : <TodoView />)}
-
-            {/* Mobile Tab 2: 清单 */}
-            {mobileSection === 'lists' && (
-              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+              {pullOffset > 12 && (
                 <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    padding: '8px 12px',
-                    overflowX: 'auto',
-                    borderBottom: '1px solid var(--border)',
-                    background: 'var(--bg-panel)',
-                    flexShrink: 0,
-                  }}
+                  className="flex shrink-0 items-center justify-center border-b bg-sidebar font-medium text-primary text-xs"
+                  style={{ height: Math.min(36, pullOffset) }}
                 >
-                  {activeLists.map((list) => {
-                    const active = mobileListId === list.id;
-                    return (
-                      <button
-                        key={list.id}
-                        type="button"
-                        onClick={() => setMobileListId(list.id)}
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 6,
-                          padding: '5px 11px',
-                          borderRadius: 999,
-                          border: `1px solid ${active ? 'var(--accent-border)' : 'var(--border)'}`,
-                          background: active ? 'var(--pill-active-bg)' : 'var(--bg-surface)',
-                          color: active ? 'var(--pill-active-text)' : 'var(--text-secondary)',
-                          fontWeight: active ? 600 : 500,
-                          fontSize: 12.5,
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        <span
-                          style={{
-                            width: 7,
-                            height: 7,
-                            borderRadius: '50%',
-                            background: list.color,
-                          }}
-                        />
-                        <span>{list.name}</span>
-                      </button>
-                    );
-                  })}
-                  <button
-                    type="button"
-                    onClick={() => setShowListManager(true)}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 4,
-                      padding: '5px 10px',
-                      borderRadius: 999,
-                      border: '1px dashed var(--border-strong)',
-                      color: 'var(--text-muted)',
-                      fontSize: 12,
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    <PlusIcon size={12} />
-                    <span>管理清单</span>
-                  </button>
+                  {webdavStatus.configured
+                    ? pullOffset >= 44
+                      ? '松开立即触发 WebDAV 同步'
+                      : '下拉同步云端数据…'
+                    : '可在「设置 → 数据与同步」配置 WebDAV'}
                 </div>
-                {mobileListId ? (
-                  <TodoView listIdOverride={mobileListId} />
-                ) : (
-                  <div
-                    style={{
-                      flex: 1,
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 10,
-                      color: 'var(--text-muted)',
-                      fontSize: 13,
-                    }}
-                  >
-                    <ListIcon size={24} />
-                    <span>还没有自定义清单</span>
-                    <button
-                      type="button"
-                      className="dt-btn dt-btn-primary"
-                      onClick={() => setShowListManager(true)}
-                    >
-                      新建清单
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
+              )}
 
-            {/* Mobile Tab 3: 便签 */}
-            {mobileSection === 'notes' && (
-              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-                {activeMobileNoteId ? (
-                  <>
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        padding: '6px 12px',
-                        background: 'var(--bg-header)',
-                        borderBottom: '1px solid var(--border)',
-                        flexShrink: 0,
-                      }}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => setActiveTab({ kind: 'note_library' })}
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 5,
-                          color: 'var(--accent)',
-                          fontSize: 12.5,
-                          fontWeight: 600,
-                        }}
-                      >
-                        <ArrowLeftIcon size={14} />
-                        <span>返回便签库</span>
-                      </button>
-                    </div>
-                    <NoteView noteId={activeMobileNoteId} />
-                  </>
-                ) : (
-                  <>
-                    {pinnedNotes.length > 0 && (
-                      <div
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 6,
-                          padding: '8px 12px 4px',
-                          overflowX: 'auto',
-                          flexShrink: 0,
-                        }}
-                      >
-                        <span style={{ fontSize: 11.5, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                          置顶：
-                        </span>
-                        {pinnedNotes.map((n) => (
-                          <button
-                            key={n.id}
-                            type="button"
-                            onClick={() => setActiveTab({ kind: 'note', noteId: n.id })}
-                            style={{
-                              padding: '4px 10px',
-                              borderRadius: 999,
-                              border: '1px solid var(--accent-border)',
-                              background: 'var(--accent-soft)',
-                              color: 'var(--accent-soft-text)',
-                              fontSize: 12,
-                              fontWeight: 500,
-                              whiteSpace: 'nowrap',
-                            }}
-                          >
-                            {n.title || '便签'}
-                          </button>
-                        ))}
+              <div
+                ref={mobileBodyRef}
+                className="desktag-panel-body"
+                onTouchStart={handleTouchStart}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={handleTouchEnd}
+              >
+                {updateBannerNode}
+
+                <Suspense fallback={null}>
+                  {/* Mobile Tab 1: 待办 */}
+                  {mobileSection === 'todo' && (showQuadrant ? <QuadrantView /> : <TodoView />)}
+
+                  {/* Mobile Tab 2: 清单 */}
+                  {mobileSection === 'lists' && (
+                    <div className="flex min-h-0 flex-1 flex-col">
+                      <div className="flex shrink-0 items-center gap-1.5 overflow-x-auto border-b bg-background px-3 py-2">
+                        {activeLists.map((list) => {
+                          const active = mobileListId === list.id;
+                          return (
+                            <Button
+                              key={list.id}
+                              onClick={() => setMobileListId(list.id)}
+                              size="xs"
+                              variant={active ? 'default' : 'outline'}
+                            >
+                              <span
+                                className="size-2 shrink-0 rounded-full"
+                                style={{ backgroundColor: list.color }}
+                              />
+                              <span>{list.name}</span>
+                            </Button>
+                          );
+                        })}
+                        <Button
+                          className="border-dashed text-muted-foreground"
+                          onClick={() => setShowListManager(true)}
+                          size="xs"
+                          variant="outline"
+                        >
+                          <PlusIcon aria-hidden="true" />
+                          <span>管理清单</span>
+                        </Button>
                       </div>
-                    )}
-                    <NoteLibraryView
-                      onOpenNote={(id) => setActiveTab({ kind: 'note', noteId: id })}
-                    />
-                  </>
-                )}
+                      {mobileListId ? (
+                        <TodoView listIdOverride={mobileListId} />
+                      ) : (
+                        <Empty>
+                          <EmptyMedia variant="icon">
+                            <ListTodoIcon aria-hidden="true" />
+                          </EmptyMedia>
+                          <EmptyTitle className="text-base">还没有自定义清单</EmptyTitle>
+                          <EmptyContent>
+                            <Button onClick={() => setShowListManager(true)} size="sm">
+                              <PlusIcon aria-hidden="true" />
+                              新建清单
+                            </Button>
+                          </EmptyContent>
+                        </Empty>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Mobile Tab 3: 便签 */}
+                  {mobileSection === 'notes' && (
+                    <div className="flex min-h-0 flex-1 flex-col">
+                      {activeMobileNoteId ? (
+                        <>
+                          <div className="flex shrink-0 items-center border-b bg-sidebar px-2.5 py-1.5">
+                            <Button
+                              onClick={() => setActiveTab({ kind: 'note_library' })}
+                              size="xs"
+                              variant="ghost"
+                            >
+                              <ArrowLeftIcon aria-hidden="true" />
+                              <span>返回便签库</span>
+                            </Button>
+                          </div>
+                          <NoteView noteId={activeMobileNoteId} />
+                        </>
+                      ) : (
+                        <>
+                          {pinnedNotes.length > 0 && (
+                            <div className="flex shrink-0 items-center gap-1.5 overflow-x-auto px-3 pt-2 pb-1">
+                              <span className="shrink-0 text-muted-foreground text-xs">置顶：</span>
+                              {pinnedNotes.map((n) => (
+                                <Badge
+                                  key={n.id}
+                                  render={
+                                    <button
+                                      onClick={() => setActiveTab({ kind: 'note', noteId: n.id })}
+                                      type="button"
+                                    />
+                                  }
+                                  variant="outline"
+                                >
+                                  {n.title || '便签'}
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
+                          <NoteLibraryView
+                            onOpenNote={(id) => setActiveTab({ kind: 'note', noteId: id })}
+                          />
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Mobile Tab 4: 视图 (Calendar + Quadrants) */}
+                  {mobileSection === 'views' && (
+                    <div className="flex min-h-0 flex-1 flex-col">
+                      <div className="flex shrink-0 justify-center border-b bg-sidebar px-3 py-2">
+                        <SegmentedControl render={<nav aria-label="视图切换" />} size="sm">
+                          <SegmentedControlItem
+                            aria-current={mobileViewsSubTab === 'calendar' ? 'page' : undefined}
+                            onClick={() => setMobileViewsSubTab('calendar')}
+                          >
+                            <CalendarIcon aria-hidden="true" />
+                            <span>日历视图</span>
+                          </SegmentedControlItem>
+                          <SegmentedControlItem
+                            aria-current={mobileViewsSubTab === 'quadrant' ? 'page' : undefined}
+                            onClick={() => setMobileViewsSubTab('quadrant')}
+                          >
+                            <LayoutGridIcon aria-hidden="true" />
+                            <span>四象限</span>
+                          </SegmentedControlItem>
+                        </SegmentedControl>
+                      </div>
+
+                      {mobileViewsSubTab === 'calendar' ? <CalendarView /> : <QuadrantView embedded />}
+                    </div>
+                  )}
+
+                  {/* Mobile Tab 5: 设置 (Inline Settings with WebDAV 1-paste setup) */}
+                  {mobileSection === 'settings' && (
+                    <SettingsModal inline initialTab={settingsInitialTab} />
+                  )}
+                </Suspense>
               </div>
-            )}
 
-            {/* Mobile Tab 4: 视图 (Calendar + Quadrants) */}
-            {mobileSection === 'views' && (
-              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'center',
-                    padding: '8px 12px',
-                    borderBottom: '1px solid var(--border)',
-                    background: 'var(--bg-header)',
-                    flexShrink: 0,
-                  }}
-                >
-                  <div
-                    style={{
-                      display: 'inline-flex',
-                      padding: 2,
-                      borderRadius: 9,
-                      background: 'var(--bg-panel)',
-                      border: '1px solid var(--border)',
-                    }}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => setMobileViewsSubTab('calendar')}
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 5,
-                        padding: '4px 14px',
-                        borderRadius: 7,
-                        background:
-                          mobileViewsSubTab === 'calendar' ? 'var(--pill-active-bg)' : 'transparent',
-                        color:
-                          mobileViewsSubTab === 'calendar'
-                            ? 'var(--pill-active-text)'
-                            : 'var(--text-secondary)',
-                        fontWeight: mobileViewsSubTab === 'calendar' ? 600 : 500,
-                        fontSize: 12.5,
-                      }}
-                    >
-                      <CalendarIcon size={13} />
-                      <span>日历视图</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setMobileViewsSubTab('quadrant')}
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 5,
-                        padding: '4px 14px',
-                        borderRadius: 7,
-                        background:
-                          mobileViewsSubTab === 'quadrant' ? 'var(--pill-active-bg)' : 'transparent',
-                        color:
-                          mobileViewsSubTab === 'quadrant'
-                            ? 'var(--pill-active-text)'
-                            : 'var(--text-secondary)',
-                        fontWeight: mobileViewsSubTab === 'quadrant' ? 600 : 500,
-                        fontSize: 12.5,
-                      }}
-                    >
-                      <QuadrantIcon size={13} />
-                      <span>四象限</span>
-                    </button>
-                  </div>
-                </div>
+              <MobileBottomNav />
 
-                {mobileViewsSubTab === 'calendar' ? <CalendarView /> : <QuadrantView embedded />}
-              </div>
-            )}
-
-            {/* Mobile Tab 5: 设置 (Inline Settings with WebDAV 1-paste setup) */}
-            {mobileSection === 'settings' && (
-              <SettingsModal inline initialTab={settingsInitialTab} />
-            )}
-          </Suspense>
-        </div>
-
-        <MobileBottomNav />
-
-        {/* Shared Modals */}
-        <TodoDetailModal />
-        <ReminderModal />
-        <ListManagerModal />
-        {(showSearch || showVoiceModal) && (
-          <Suspense fallback={null}>
-            <SearchVoiceModals />
-          </Suspense>
-        )}
-        {mobileSection !== 'settings' && showSettings && (
-          <Suspense fallback={null}>
-            <SettingsModal initialTab={settingsInitialTab} />
-          </Suspense>
-        )}
-        {toastMessage && <div className="desktag-toast">{toastMessage}</div>}
+              {/* Shared Modals */}
+              <TodoDetailModal />
+              <ReminderModal />
+              <ListManagerModal />
+              {(showSearch || showVoiceModal) && (
+                <Suspense fallback={null}>
+                  <SearchVoiceModals />
+                </Suspense>
+              )}
+              {mobileSection !== 'settings' && showSettings && (
+                <Suspense fallback={null}>
+                  <SettingsModal initialTab={settingsInitialTab} />
+                </Suspense>
+              )}
+              <FloatingToastPill message={toastMessage} />
+            </AnchoredToastProvider>
+          </ToastProvider>
+        </PortalProvider>
       </div>
     );
   }
@@ -729,49 +611,59 @@ const DeskTagShell: React.FC = () => {
     <div
       className={`desktag-shell ${dockDirectionClass}${isCollapsedTabsOnly ? ' is-collapsed' : ''}`}
     >
-      {/* Protruding Folder-Style Side Tab Rail */}
+      {/* Protruding Folder-Style Side Tab Rail (outside PortalProvider so tab tooltips/menus are not clipped) */}
       <SideTabRail />
 
-      {/* Main Rounded Panel Card (hidden smoothly when collapsed to protruding tabs only) */}
-      {!isCollapsedTabsOnly && (
-        <main className="desktag-panel-card">
-          <PanelHeader onOpenSettingsAbout={handleOpenSettingsAbout} />
+      {/* Main Rounded Panel Card + Scoped Overlay Portal Container */}
+      <PortalProvider container={portalContainer}>
+        <ToastProvider>
+          <AnchoredToastProvider>
+            {!isCollapsedTabsOnly && (
+              <main
+                ref={setPortalContainer}
+                className="desktag-panel-card isolate relative overflow-hidden"
+              >
+                <PanelHeader onOpenSettingsAbout={handleOpenSettingsAbout} />
 
-          <div className="desktag-panel-body">
-            {updateBannerNode}
+                <div className="desktag-panel-body">
+                  {updateBannerNode}
 
-            <Suspense fallback={null}>
-              {showQuadrant ? (
-                <QuadrantView />
-              ) : activeTab.kind === 'todo' ? (
-                <TodoView />
-              ) : activeTab.kind === 'list' ? (
-                <TodoView listIdOverride={activeTab.listId} />
-              ) : activeTab.kind === 'note' ? (
-                <NoteView noteId={activeTab.noteId} />
-              ) : (
-                <NoteLibraryView />
-              )}
-            </Suspense>
-          </div>
-        </main>
-      )}
+                  <Suspense fallback={null}>
+                    {showQuadrant ? (
+                      <QuadrantView />
+                    ) : activeTab.kind === 'todo' ? (
+                      <TodoView />
+                    ) : activeTab.kind === 'list' ? (
+                      <TodoView listIdOverride={activeTab.listId} />
+                    ) : activeTab.kind === 'note' ? (
+                      <NoteView noteId={activeTab.noteId} />
+                    ) : (
+                      <NoteLibraryView />
+                    )}
+                  </Suspense>
+                </div>
 
-      {/* Modals & Toast */}
-      <TodoDetailModal />
-      <ReminderModal />
-      <ListManagerModal />
-      {showSettings && (
-        <Suspense fallback={null}>
-          <SettingsModal initialTab={settingsInitialTab} />
-        </Suspense>
-      )}
-      {(showSearch || showVoiceModal) && (
-        <Suspense fallback={null}>
-          <SearchVoiceModals />
-        </Suspense>
-      )}
-      {toastMessage && <div className="desktag-toast">{toastMessage}</div>}
+                <FloatingToastPill message={toastMessage} />
+              </main>
+            )}
+
+            {/* Modals (portal cleanly into <main> via PortalProvider) */}
+            <TodoDetailModal />
+            <ReminderModal />
+            <ListManagerModal />
+            {showSettings && (
+              <Suspense fallback={null}>
+                <SettingsModal initialTab={settingsInitialTab} />
+              </Suspense>
+            )}
+            {(showSearch || showVoiceModal) && (
+              <Suspense fallback={null}>
+                <SearchVoiceModals />
+              </Suspense>
+            )}
+          </AnchoredToastProvider>
+        </ToastProvider>
+      </PortalProvider>
     </div>
   );
 };
@@ -780,9 +672,11 @@ export default function App() {
   const route = useMemo(() => parseWindowRoute(), []);
   return (
     <ErrorBoundary route={route.kind}>
-      <DeskTagProvider>
-        <DeskTagShell />
-      </DeskTagProvider>
+      <TooltipProvider delay={300}>
+        <DeskTagProvider>
+          <DeskTagShell />
+        </DeskTagProvider>
+      </TooltipProvider>
     </ErrorBoundary>
   );
 }

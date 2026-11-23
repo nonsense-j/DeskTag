@@ -3,7 +3,7 @@
 > 轻量、跨平台、支持端到端加密 WebDAV 云同步的独立开源桌面贴边待办与便签工具。  
 > **An independent, open-source, lightweight cross-platform edge-docked sticky-note & todo companion with E2EE WebDAV cloud sync.**
 
-DeskTag 基于 **Tauri v2 + Rust + React 19 + TypeScript** 构建，面向 **Windows、macOS (Apple Silicon & Intel) 与 Android**，兼顾极低内存占用、贴边无打扰交互与安全可控的自托管云同步。
+DeskTag 基于 **Tauri v2 + Rust + React 19 + TypeScript + coss ui (Base UI) + Tailwind CSS v4** 构建，面向 **Windows、macOS (Apple Silicon & Intel) 与 Android**，兼顾极低内存占用、贴边无打扰交互与安全可控的自托管云同步。
 
 ---
 
@@ -26,13 +26,14 @@ DeskTag 基于 **Tauri v2 + Rust + React 19 + TypeScript** 构建，面向 **Win
 - **独立便签窗与隐私锁**：支持将常用便签弹出为独立窗口查看，支持单篇便签分组隐私加锁保护。
 
 ### 4. 日历、四象限与智能提醒 (Calendar, Quadrants & Reminders)
-- **独立日历窗口**：内置完整中国**农历、传统节日与二十四节气**，直观查看每日待办安排。
+- **独立日历窗口**：内置完整中国**农历、传统节日与二十四节气**，支持**多日待办连续跨天色条**直观查看每日与跨日排期。
 - **四象限视图 (Eisenhower Matrix)**：按「重要且紧急 / 重要不紧急 / 紧急不重要 / 不重要不紧急」高效分流任务。
 - **标准与重复提醒 + 免打扰时段**：支持单次及按日/周/月/年/自定义周期的重复提醒、系统原生通知与通知中心气泡，并可设置免打扰（DND）静默时段。
 
-### 5. 11 款原创内置主题与排版定制 (Themes & Typography)
-- 内置 **11 款原创主题皮肤**（10 款浅色 + 1 款深色）：
-  `晨光亚麻` · `牛皮手账` · `晴云杏桃` · `竹影青露` · `琥珀乌龙` · `烘焙摩卡` · `暮色樱云` · `银杏微光` · `冰川海雾` · `素墨极简` · `暗夜余烬`
+### 5. 12 款原创内置主题与 coss ui 界面 (Themes & coss ui Design)
+- 全面基于 **coss ui（Base UI + Tailwind CSS v4）** 重构交互与视觉体系，统一 CardFrame 卡片/表格框架、横向标签页设置与 WebDAV 同步体验。
+- 内置 **12 款原创主题皮肤**（10 款浅色 + 2 款深色，默认 **`素墨极简`**，新增原生深色主题 **`极夜纯粹`**）：
+  `素墨极简` · `晨光亚麻` · `牛皮手账` · `晴云杏桃` · `竹影青露` · `琥珀乌龙` · `烘焙摩卡` · `暮色樱云` · `银杏微光` · `冰川海雾` · `极夜纯粹` · `暗夜余烬`
 - 支持面板透明度调节、字号缩放与 6 套中英文字体方案（系统默认 / 微软雅黑 / 苹方·思源黑体 / 温润宋体 / 手写楷体 / 等宽清晰）。
 
 ### 6. 本地备份与多格式导出 (Local Backup & Export)
@@ -109,10 +110,10 @@ pnpm tauri android build --apk --target aarch64
 
 ## English Overview
 
-**DeskTag** is an independent, open-source, cross-platform edge-docked sticky-note & todo companion powered by **Tauri v2, Rust, React 19, and TypeScript**, targeting **Windows, macOS (Apple Silicon & Intel), and Android**.
+**DeskTag** is an independent, open-source, cross-platform edge-docked sticky-note & todo companion powered by **Tauri v2, Rust, React 19, TypeScript, coss ui (Base UI), and Tailwind CSS v4**, targeting **Windows, macOS (Apple Silicon & Intel), and Android**.
 
 - **Desktop Edge Docking**: 6 docking modes (`Left / Right / Top` × `Protruding Side Tabs / Full Auto-Hide`), multi-monitor work-area clamping, system tray, and global hotkeys (`Alt+Shift+D`, `Alt+Shift+N`).
-- **Productivity Suite**: Todos with subtasks, progress pills, natural-language date/priority parsing, batch paste, custom pinned lists, Normal & Timeline notes (collapsible headings, outline, Markdown tables, attachments, `@` cross-links, privacy lock), standalone Calendar with Chinese lunar dates & solar terms, Four Quadrants (Eisenhower Matrix), standard & recurring reminders with DND quiet hours, 11 original built-in themes, and local backup/export to **Word (`.docx`), PDF, HTML, Markdown, and CSV**.
+- **Productivity Suite & coss ui**: Redesigned with **coss ui (Base UI + Tailwind CSS v4)**, CardFrame tables, and a horizontal-tab Settings & WebDAV experience; todos with subtasks, progress pills, natural-language date/priority parsing, batch paste, custom pinned lists, Normal & Timeline notes (collapsible headings, outline, Markdown tables, attachments, `@` cross-links, privacy lock), standalone Calendar with Chinese lunar dates, solar terms & continuous multi-day task spans, Four Quadrants (Eisenhower Matrix), standard & recurring reminders with DND quiet hours, 12 original built-in themes (default `素墨极简` + new native dark theme `极夜纯粹`), and local backup/export to **Word (`.docx`), PDF, HTML, Markdown, and CSV**.
 - **E2EE WebDAV Sync**: Client-side `AES-256-GCM` + `PBKDF2-SHA256` (600,000 iterations) encryption, 3-way per-item merge with tombstones, hardened compatibility for Nutstore, 123pan, TeraCLOUD, Synology NAS, Alist/OpenList, and Nextcloud, plus Dry-Run `Preview`, one-click `UndoSync`, and `desktag-sync:...` one-paste mobile onboarding (excluding the encryption passphrase).
 
 ---

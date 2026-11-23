@@ -470,7 +470,7 @@ export interface UpdateInstallResult {
 
 export function createDefaultSyncedSettings(): SyncedSettings {
   return {
-    skinId: 'morning-linen',
+    skinId: 'ink-minimal',
     opacity: 1.0,
     fontFamily: 'system',
     bodyFontSize: 14,

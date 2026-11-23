@@ -1,6 +1,8 @@
+import { PlusIcon } from 'lucide-react';
 import React from 'react';
+import { Tooltip, TooltipPopup, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
 import { useDeskTagStore, type ActiveTab } from '../store/useDeskTagStore';
-import { PlusIcon } from './Icons';
 
 interface RailTabItem {
   key: string;
@@ -98,46 +100,94 @@ export const SideTabRail: React.FC = () => {
     }
   };
 
+  const orientationShapeClass =
+    orientation === 'left'
+      ? 'rounded-l-[10px] rounded-r-none border-r-0 min-h-9 px-1.5 py-1.5 before:rounded-l-[9px]'
+      : orientation === 'right'
+        ? 'rounded-r-[10px] rounded-l-none border-l-0 min-h-9 px-1.5 py-1.5 before:rounded-r-[9px]'
+        : 'rounded-b-[10px] rounded-t-none border-t-0 min-h-8 px-3.5 py-1.5 before:rounded-b-[9px]';
+
+  const tooltipSide =
+    orientation === 'left' ? 'right' : orientation === 'right' ? 'left' : 'bottom';
+
   return (
     <aside
-      className={`side-tab-rail orientation-${orientation}${isCollapsedOnly ? ' collapsed-only' : ''}`}
       aria-label="侧边页签栏"
+      className={cn(
+        'side-tab-rail',
+        `orientation-${orientation}`,
+        isCollapsedOnly && 'collapsed-only',
+      )}
     >
       {tabs.map((item) => {
         const active = isTabActive(item.tab);
         return (
-          <button
-            key={item.key}
-            type="button"
-            className={`side-tab-btn${active ? ' active' : ''}`}
-            style={getTabStyle(item)}
-            onClick={() => handleTabClick(item.tab)}
-            title={item.label}
-          >
-            <span className="side-tab-label">{item.label}</span>
-          </button>
+          <Tooltip key={item.key}>
+            <TooltipTrigger
+              render={
+                <button
+                  aria-current={active ? 'page' : undefined}
+                  className={cn(
+                    'relative inline-flex shrink-0 cursor-pointer select-none items-center justify-center overflow-hidden whitespace-nowrap border not-dark:bg-clip-padding text-xs leading-tight tracking-tight transition-[background-color,color,box-shadow,border-color] duration-150 outline-none before:pointer-events-none before:absolute before:inset-0 focus-visible:z-20 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background',
+                    orientationShapeClass,
+                    active
+                      ? 'z-10 border-transparent bg-[var(--tab-active-bg)] font-semibold text-[var(--tab-active-text)] shadow-sm/10 before:shadow-[inset_0_1px_0_rgba(255,255,255,0.14)] dark:before:shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]'
+                      : 'border-border bg-[var(--tab-inactive-bg)] font-medium text-[var(--tab-inactive-text)] shadow-xs/5 before:shadow-[0_1px_--theme(--color-black/4%)] hover:bg-[var(--tab-inactive-hover-bg)] hover:text-foreground dark:before:shadow-[0_-1px_--theme(--color-white/6%)]',
+                  )}
+                  onClick={() => handleTabClick(item.tab)}
+                  style={getTabStyle(item)}
+                  type="button"
+                />
+              }
+            >
+              <span className="max-w-full truncate">{item.label}</span>
+            </TooltipTrigger>
+            <TooltipPopup
+              portalProps={{ container: null }}
+              side={tooltipSide}
+              sideOffset={6}
+            >
+              {item.label}
+            </TooltipPopup>
+          </Tooltip>
         );
       })}
 
-      <button
-        type="button"
-        className="side-tab-btn add-tab-btn"
-        style={
-          orientation === 'top'
-            ? { width: 34, padding: '5px 0' }
-            : {
-                width:
-                  device.tabWidthMode === 'uniform'
-                    ? Math.max(48, Math.min(110, device.uniformTabWidth || 66))
-                    : 52,
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              aria-label="新建便签页签"
+              className={cn(
+                'relative inline-flex shrink-0 cursor-pointer select-none items-center justify-center overflow-hidden border border-border bg-[var(--tab-inactive-bg)] not-dark:bg-clip-padding text-[var(--tab-inactive-text)] shadow-xs/5 transition-[background-color,color,box-shadow] duration-150 outline-none before:pointer-events-none before:absolute before:inset-0 before:shadow-[0_1px_--theme(--color-black/4%)] hover:bg-[var(--tab-inactive-hover-bg)] hover:text-foreground focus-visible:z-20 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background dark:before:shadow-[0_-1px_--theme(--color-white/6%)]',
+                orientationShapeClass,
+                'min-h-8 py-1.5',
+              )}
+              onClick={handleQuickCreateNote}
+              style={
+                orientation === 'top'
+                  ? { width: 34, padding: '5px 0' }
+                  : {
+                      width:
+                        device.tabWidthMode === 'uniform'
+                          ? Math.max(48, Math.min(110, device.uniformTabWidth || 66))
+                          : 52,
+                    }
               }
-        }
-        onClick={handleQuickCreateNote}
-        title="新建便签页签"
-        aria-label="新建便签页签"
-      >
-        <PlusIcon size={15} />
-      </button>
+              type="button"
+            />
+          }
+        >
+          <PlusIcon aria-hidden="true" className="size-4 opacity-80" strokeWidth={1.85} />
+        </TooltipTrigger>
+        <TooltipPopup
+          portalProps={{ container: null }}
+          side={tooltipSide}
+          sideOffset={6}
+        >
+          新建便签页签
+        </TooltipPopup>
+      </Tooltip>
     </aside>
   );
 };

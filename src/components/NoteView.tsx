@@ -1,4 +1,44 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  AlertCircleIcon,
+  ArrowLeftIcon,
+  ArrowLeftRightIcon,
+  AudioLinesIcon,
+  BoldIcon,
+  CheckIcon,
+  CheckSquareIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  ClockIcon,
+  CodeIcon,
+  Columns3Icon,
+  DownloadIcon,
+  EllipsisIcon,
+  ExternalLinkIcon,
+  FileTextIcon,
+  Heading1Icon,
+  Heading2Icon,
+  Heading3Icon,
+  ImageIcon,
+  ItalicIcon,
+  Link2Icon,
+  ListIcon,
+  ListTreeIcon,
+  LockIcon,
+  MinusIcon,
+  PaperclipIcon,
+  PencilIcon,
+  PinIcon,
+  PlusIcon,
+  QuoteIcon,
+  Rows3Icon,
+  SearchIcon,
+  SendIcon,
+  StickyNoteIcon,
+  TableIcon,
+  Trash2Icon,
+  XIcon,
+} from 'lucide-react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   isTauriRuntime,
   openAttachment,
@@ -6,6 +46,7 @@ import {
   readAttachmentDataUrl,
   saveAttachment,
 } from '../api/tauri';
+import { cn } from '../lib/utils';
 import { useDeskTagStore } from '../store/useDeskTagStore';
 import type {
   AttachmentKind,
@@ -14,31 +55,63 @@ import type {
   TimelineEntry,
 } from '../types/models';
 import { exportDeskTagDocument } from '../utils/exporter';
-import { formatTimeHMS, formatTimestampYMDHM } from '../utils/lunar';
+import { formatTimeHMS, formatTimestampYMDHM, pad2 } from '../utils/lunar';
+import { Alert, AlertDescription } from './ui/alert';
+import { Badge } from './ui/badge';
+import { Button } from './ui/button';
 import {
-  ArrowLeftIcon,
-  AudioIcon,
-  CheckIcon,
-  ChevronDownIcon,
-  ChevronRightIcon,
-  CloseIcon,
-  EditIcon,
-  ExportIcon,
-  FileIcon,
-  ImageIcon,
-  LinkIcon,
-  LockIcon,
-  MinimizeIcon,
-  NoteIcon,
-  OutlineIcon,
-  PinIcon,
-  PlusIcon,
-  PopoutIcon,
-  SendIcon,
-  TableIcon,
-  TimelineIcon,
-  TrashIcon,
-} from './Icons';
+  Card,
+  CardDescription,
+  CardFrame,
+  CardFrameAction,
+  CardFrameHeader,
+  CardFrameTitle,
+  CardHeader,
+  CardPanel,
+  CardTitle,
+} from './ui/card';
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from './ui/empty';
+import { Frame, FramePanel } from './ui/frame';
+import { Input } from './ui/input';
+import { InputGroup, InputGroupAddon, InputGroupInput } from './ui/input-group';
+import {
+  Menu,
+  MenuGroup,
+  MenuItem,
+  MenuPopup,
+  MenuSeparator,
+  MenuTrigger,
+} from './ui/menu';
+import {
+  Popover,
+  PopoverClose,
+  PopoverPopup,
+  PopoverTitle,
+} from './ui/popover';
+import { ScrollArea } from './ui/scroll-area';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from './ui/table';
+import { Textarea } from './ui/textarea';
+import {
+  Toolbar,
+  ToolbarButton,
+  ToolbarGroup,
+  ToolbarSeparator,
+} from './ui/toolbar';
+import { Tooltip, TooltipPopup, TooltipTrigger } from './ui/tooltip';
 
 export interface NoteViewProps {
   noteId: string;
@@ -156,11 +229,13 @@ function serializeBlocksToMarkdown(blocks: NoteBlock[]): string {
       if (blk.type === 'table') {
         if (blk.rows.length === 0) return '';
         const colCount = Math.max(1, blk.rows[0].length);
-        const header = `| ${blk.rows[0].map((c) => c.replace(/\|/g, '｜')).join(' | ')} |`;
+        const sanitizeCell = (c: string) =>
+          c.replace(/\r?\n+/g, ' ').replace(/\|/g, '｜');
+        const header = `| ${blk.rows[0].map(sanitizeCell).join(' | ')} |`;
         const sep = `| ${new Array<string>(colCount).fill('---').join(' | ')} |`;
         const body = blk.rows
           .slice(1)
-          .map((r) => `| ${r.map((c) => c.replace(/\|/g, '｜')).join(' | ')} |`);
+          .map((r) => `| ${r.map(sanitizeCell).join(' | ')} |`);
         return [header, sep, ...body].join('\n');
       }
       return blk.text;
@@ -173,6 +248,10 @@ function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatTimeHM(date: Date = new Date()): string {
+  return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
 }
 
 function countVisibleChars(text: string): number {
@@ -192,7 +271,263 @@ function readFileAsBase64(file: File): Promise<string> {
   });
 }
 
-// Lazy inline attachment preview for image or audio
+function computeTableColumnWidths(rows: string[][]): number[] {
+  const colCount = rows[0]?.length ?? 0;
+  if (colCount === 0) return [];
+  const weights = new Array<number>(colCount).fill(6);
+  for (let c = 0; c < colCount; c += 1) {
+    let maxLen = 0;
+    for (const row of rows) {
+      const len = (row[c] ?? '').trim().length;
+      if (len > maxLen) maxLen = len;
+    }
+    weights[c] = 6 + Math.min(22, Math.max(3, maxLen));
+  }
+  const total = weights.reduce((sum, w) => sum + w, 0) || 1;
+  return weights.map((w) => Math.round((w / total) * 1000) / 10);
+}
+
+// ---------------------------------------------------------------------------
+// Safe Inline & Paragraph Markdown Renderer (for crisp non-editing view)
+// ---------------------------------------------------------------------------
+
+function renderInlineMarkdown(text: string): React.ReactNode[] {
+  const nodes: React.ReactNode[] = [];
+  const pattern = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*\n]+\*)/g;
+  let lastIdx = 0;
+  let match: RegExpExecArray | null = pattern.exec(text);
+  let key = 0;
+
+  while (match !== null) {
+    if (match.index > lastIdx) {
+      nodes.push(text.slice(lastIdx, match.index));
+    }
+    const token = match[0];
+    if (token.startsWith('`') && token.endsWith('`')) {
+      nodes.push(
+        <code
+          key={`c-${key++}`}
+          className="mx-0.5 inline-block rounded border border-border bg-muted px-1.5 py-px align-baseline font-mono text-[0.84em] leading-[1.4] text-foreground"
+        >
+          {token.slice(1, -1)}
+        </code>,
+      );
+    } else if (token.startsWith('**') && token.endsWith('**')) {
+      nodes.push(
+        <strong key={`b-${key++}`} className="font-semibold text-foreground">
+          {token.slice(2, -2)}
+        </strong>,
+      );
+    } else if (token.startsWith('*') && token.endsWith('*')) {
+      nodes.push(
+        <em key={`i-${key++}`} className="italic">
+          {token.slice(1, -1)}
+        </em>,
+      );
+    } else {
+      nodes.push(token);
+    }
+    lastIdx = match.index + token.length;
+    match = pattern.exec(text);
+  }
+
+  if (lastIdx < text.length) {
+    nodes.push(text.slice(lastIdx));
+  }
+  return nodes;
+}
+
+type ParsedSegment =
+  | { kind: 'code'; content: string }
+  | { kind: 'ul'; items: string[] }
+  | { kind: 'ol'; items: Array<{ num: string; text: string }> }
+  | { kind: 'quote'; lines: string[] }
+  | { kind: 'text'; lines: string[] };
+
+function parseParagraphSegments(text: string): ParsedSegment[] {
+  const lines = text.split('\n');
+  const segments: ParsedSegment[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // Fenced code block
+    if (/^\s*```/.test(line)) {
+      const codeLines: string[] = [];
+      i += 1;
+      while (i < lines.length && !/^\s*```\s*$/.test(lines[i])) {
+        codeLines.push(lines[i]);
+        i += 1;
+      }
+      if (i < lines.length) i += 1;
+      segments.push({ kind: 'code', content: codeLines.join('\n') });
+      continue;
+    }
+
+    // Bullet list
+    const ulMatch = /^\s*[-*•]\s+(.*)$/.exec(line);
+    if (ulMatch) {
+      const items: string[] = [ulMatch[1]];
+      i += 1;
+      while (i < lines.length) {
+        const nextUl = /^\s*[-*•]\s+(.*)$/.exec(lines[i]);
+        if (!nextUl) break;
+        items.push(nextUl[1]);
+        i += 1;
+      }
+      segments.push({ kind: 'ul', items });
+      continue;
+    }
+
+    // Ordered list
+    const olMatch = /^\s*(\d+)\.\s+(.*)$/.exec(line);
+    if (olMatch) {
+      const items: Array<{ num: string; text: string }> = [
+        { num: olMatch[1], text: olMatch[2] },
+      ];
+      i += 1;
+      while (i < lines.length) {
+        const nextOl = /^\s*(\d+)\.\s+(.*)$/.exec(lines[i]);
+        if (!nextOl) break;
+        items.push({ num: nextOl[1], text: nextOl[2] });
+        i += 1;
+      }
+      segments.push({ kind: 'ol', items });
+      continue;
+    }
+
+    // Blockquote
+    const quoteMatch = /^\s*>\s?(.*)$/.exec(line);
+    if (quoteMatch) {
+      const qLines: string[] = [quoteMatch[1]];
+      i += 1;
+      while (i < lines.length) {
+        const nextQ = /^\s*>\s?(.*)$/.exec(lines[i]);
+        if (!nextQ) break;
+        qLines.push(nextQ[1]);
+        i += 1;
+      }
+      segments.push({ kind: 'quote', lines: qLines });
+      continue;
+    }
+
+    // Plain text lines
+    const textLines: string[] = [line];
+    i += 1;
+    while (
+      i < lines.length &&
+      !/^\s*```/.test(lines[i]) &&
+      !/^\s*[-*•]\s+/.test(lines[i]) &&
+      !/^\s*\d+\.\s+/.test(lines[i]) &&
+      !/^\s*>\s?/.test(lines[i])
+    ) {
+      textLines.push(lines[i]);
+      i += 1;
+    }
+    segments.push({ kind: 'text', lines: textLines });
+  }
+
+  return segments;
+}
+
+const RichParagraphDisplay: React.FC<{
+  text: string;
+  onActivate: () => void;
+}> = ({ text, onActivate }) => {
+  const segments = useMemo(() => parseParagraphSegments(text), [text]);
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onActivate}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onActivate();
+        }
+      }}
+      className="group -mx-1.5 cursor-text rounded-md px-1.5 py-0.5 text-[length:var(--font-body-size)] leading-[1.7] text-foreground transition-colors hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <div className="flex flex-col gap-1.5">
+        {segments.map((seg, idx) => {
+          if (seg.kind === 'code') {
+            return (
+              <pre
+                key={idx}
+                className="overflow-x-auto rounded-lg border bg-coss-frame-well px-3 py-2 font-mono text-xs leading-relaxed text-foreground"
+              >
+                <code>{seg.content}</code>
+              </pre>
+            );
+          }
+          if (seg.kind === 'ul') {
+            return (
+              <ul key={idx} className="flex flex-col gap-1.5 pl-0.5">
+                {seg.items.map((item, liIdx) => (
+                  <li key={liIdx} className="flex items-start gap-2.5">
+                    <span
+                      aria-hidden="true"
+                      className="mt-[0.62em] size-1.5 shrink-0 rounded-full bg-muted-foreground/55"
+                    />
+                    <span className="min-w-0 flex-1 break-words">
+                      {renderInlineMarkdown(item)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            );
+          }
+          if (seg.kind === 'ol') {
+            return (
+              <ol key={idx} className="flex flex-col gap-1.5 pl-0.5">
+                {seg.items.map((item, liIdx) => (
+                  <li key={liIdx} className="flex items-start gap-2">
+                    <span className="min-w-4 shrink-0 text-right font-medium text-muted-foreground text-xs leading-[1.9] tabular-nums">
+                      {item.num}.
+                    </span>
+                    <span className="min-w-0 flex-1 break-words">
+                      {renderInlineMarkdown(item.text)}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            );
+          }
+          if (seg.kind === 'quote') {
+            return (
+              <blockquote
+                key={idx}
+                className="border-dt-accent/50 border-l-2 py-0.5 pl-3 text-muted-foreground"
+              >
+                {seg.lines.map((qLine, qIdx) => (
+                  <p key={qIdx} className="break-words">
+                    {renderInlineMarkdown(qLine)}
+                  </p>
+                ))}
+              </blockquote>
+            );
+          }
+          return (
+            <div key={idx} className="flex flex-col gap-0.5">
+              {seg.lines.map((tLine, tIdx) => (
+                <p key={tIdx} className="break-words whitespace-pre-wrap">
+                  {renderInlineMarkdown(tLine)}
+                </p>
+              ))}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Lazy Inline Attachment Preview (Image / Audio / File)
+// ---------------------------------------------------------------------------
+
 const AttachmentMedia: React.FC<{
   att: AttachmentRef;
   onRemove?: () => void;
@@ -217,59 +552,30 @@ const AttachmentMedia: React.FC<{
 
   if (att.kind === 'image') {
     return (
-      <div
-        style={{
-          position: 'relative',
-          display: 'inline-block',
-          maxWidth: '100%',
-          borderRadius: 9,
-          overflow: 'hidden',
-          border: '1px solid var(--border)',
-          background: 'var(--bg-surface)',
-        }}
-      >
+      <div className="group/img relative inline-block max-w-full overflow-hidden rounded-xl border bg-card shadow-xs/5">
         {dataUrl ? (
           <img
             src={dataUrl}
             alt={att.name}
             onClick={() => void openAttachment(att.relativePath)}
-            style={{
-              display: 'block',
-              maxWidth: '100%',
-              maxHeight: 240,
-              objectFit: 'contain',
-              cursor: 'pointer',
-            }}
+            className="block max-h-60 max-w-full cursor-pointer object-contain"
           />
         ) : (
-          <div style={{ padding: '16px 20px', fontSize: 12, color: 'var(--text-muted)' }}>
+          <div className="px-4 py-3 text-muted-foreground text-xs">
             加载图片：{att.name}…
           </div>
         )}
         {onRemove && (
-          <button
-            type="button"
+          <Button
+            aria-label="移除图片"
             title="移除图片"
+            size="icon-xs"
+            variant="outline"
             onClick={onRemove}
-            style={{
-              position: 'absolute',
-              top: 6,
-              right: 6,
-              width: 22,
-              height: 22,
-              borderRadius: '50%',
-              border: 'none',
-              background: 'rgba(0,0,0,0.55)',
-              color: '#fff',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              fontSize: 13,
-            }}
+            className="absolute top-1.5 right-1.5 size-6 rounded-full bg-background/90 backdrop-blur-xs"
           >
-            ×
-          </button>
+            <XIcon className="size-3" aria-hidden="true" />
+          </Button>
         )}
       </div>
     );
@@ -277,142 +583,194 @@ const AttachmentMedia: React.FC<{
 
   if (att.kind === 'audio') {
     return (
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          padding: '6px 10px',
-          borderRadius: 9,
-          border: '1px solid var(--border)',
-          background: 'var(--bg-surface)',
-          flexWrap: 'wrap',
-        }}
-      >
-        <AudioIcon size={15} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-        <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{att.name}</span>
+      <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-card px-2.5 py-1.5 shadow-xs/5">
+        <AudioLinesIcon
+          className="size-4 shrink-0 text-dt-accent"
+          aria-hidden="true"
+        />
+        <span className="max-w-44 truncate text-foreground text-xs font-medium">
+          {att.name}
+        </span>
         {dataUrl ? (
-          <audio controls src={dataUrl} style={{ height: 28, maxWidth: 220 }} />
+          <audio controls src={dataUrl} className="h-7 max-w-52" />
         ) : (
-          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{formatFileSize(att.size)}</span>
+          <span className="text-[11px] text-muted-foreground">
+            {formatFileSize(att.size)}
+          </span>
         )}
         {onRemove && (
-          <button
-            type="button"
+          <Button
+            aria-label="移除音频"
             title="移除音频"
+            size="icon-xs"
+            variant="ghost"
             onClick={onRemove}
-            style={{
-              marginLeft: 'auto',
-              border: 'none',
-              background: 'transparent',
-              color: 'var(--text-muted)',
-              cursor: 'pointer',
-              fontSize: 14,
-            }}
+            className="ms-auto text-muted-foreground hover:text-foreground"
           >
-            ×
-          </button>
+            <XIcon className="size-3.5" aria-hidden="true" />
+          </Button>
         )}
       </div>
     );
   }
 
-  // File attachment chip
   return (
-    <span
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 5,
-        padding: '4px 8px',
-        borderRadius: 7,
-        background: 'var(--bg-surface)',
-        border: '1px solid var(--border)',
-        fontSize: 12.5,
-      }}
-    >
-      <FileIcon size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+    <span className="inline-flex max-w-full items-center gap-1.5 rounded-lg border bg-card px-2.5 py-1 text-xs shadow-2xs">
+      <FileTextIcon
+        className="size-3.5 shrink-0 text-dt-accent"
+        aria-hidden="true"
+      />
       <button
         type="button"
         onClick={() => void openAttachment(att.relativePath)}
-        style={{
-          border: 'none',
-          background: 'transparent',
-          padding: 0,
-          color: 'var(--accent)',
-          fontSize: 12.5,
-          fontWeight: 500,
-          cursor: 'pointer',
-        }}
+        className="max-w-48 cursor-pointer truncate border-none bg-transparent p-0 font-medium text-foreground hover:underline underline-offset-2"
       >
         {att.name}
       </button>
-      <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+      <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
         {formatFileSize(att.size)}
       </span>
       {onRemove && (
         <button
           type="button"
+          aria-label="移除附件"
           title="移除附件"
           onClick={onRemove}
-          style={{
-            border: 'none',
-            background: 'transparent',
-            padding: '0 2px',
-            color: 'var(--text-muted)',
-            cursor: 'pointer',
-            fontSize: 13,
-            lineHeight: 1,
-          }}
+          className="inline-flex size-4 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
         >
-          ×
+          <XIcon className="size-3" aria-hidden="true" />
         </button>
       )}
     </span>
   );
 };
 
-// Auto-growing textarea helper
+// ---------------------------------------------------------------------------
+// Auto-growing Textareas (for paragraphs & wrapping table cells)
+// ---------------------------------------------------------------------------
+
 const AutoTextarea: React.FC<{
   value: string;
   onChange: (next: string) => void;
   onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   onFocus?: () => void;
+  onBlur?: () => void;
   placeholder?: string;
-  style?: React.CSSProperties;
-}> = ({ value, onChange, onKeyDown, onFocus, placeholder, style }) => {
+  autoFocus?: boolean;
+  className?: string;
+}> = ({
+  value,
+  onChange,
+  onKeyDown,
+  onFocus,
+  onBlur,
+  placeholder,
+  autoFocus = false,
+  className,
+}) => {
   const ref = useRef<HTMLTextAreaElement | null>(null);
 
-  useEffect(() => {
+  const syncHeight = useCallback(() => {
     const el = ref.current;
     if (!el) return;
     el.style.height = 'auto';
     el.style.height = `${Math.max(24, el.scrollHeight)}px`;
-  }, [value]);
+  }, []);
+
+  useLayoutEffect(() => {
+    syncHeight();
+  }, [value, syncHeight]);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(syncHeight);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [syncHeight]);
+
+  useEffect(() => {
+    if (autoFocus && ref.current) {
+      const el = ref.current;
+      el.focus();
+      const len = el.value.length;
+      el.setSelectionRange(len, len);
+    }
+  }, [autoFocus]);
 
   return (
     <textarea
       ref={ref}
       rows={1}
+      cols={1}
       value={value}
       onChange={(e) => onChange(e.target.value)}
       onKeyDown={onKeyDown}
       onFocus={onFocus}
+      onBlur={onBlur}
       placeholder={placeholder}
-      style={{
-        width: '100%',
-        boxSizing: 'border-box',
-        border: 'none',
-        outline: 'none',
-        resize: 'none',
-        overflow: 'hidden',
-        background: 'transparent',
-        fontFamily: 'inherit',
-        ...style,
-      }}
+      className={cn(
+        'block w-full min-w-0 resize-none overflow-hidden border-none bg-transparent py-0.5 font-[inherit] text-[length:var(--font-body-size)] leading-[1.7] text-foreground outline-none placeholder:text-muted-foreground/60',
+        className,
+      )}
     />
   );
 };
+
+const CellAutoTextarea: React.FC<{
+  value: string;
+  onChange: (next: string) => void;
+  onFocus?: () => void;
+  placeholder?: string;
+  className?: string;
+}> = ({ value, onChange, onFocus, placeholder, className }) => {
+  const ref = useRef<HTMLTextAreaElement | null>(null);
+
+  const syncHeight = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.max(20, el.scrollHeight)}px`;
+  }, []);
+
+  useLayoutEffect(() => {
+    syncHeight();
+  }, [value, syncHeight]);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(syncHeight);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [syncHeight]);
+
+  return (
+    <textarea
+      ref={ref}
+      rows={1}
+      cols={1}
+      value={value}
+      onFocus={onFocus}
+      onChange={(e) => onChange(e.target.value.replace(/\r?\n/g, ' '))}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+          e.preventDefault();
+          e.currentTarget.blur();
+        }
+      }}
+      placeholder={placeholder}
+      className={cn(
+        'block w-full min-w-0 resize-none overflow-hidden whitespace-pre-wrap break-words border-none bg-transparent p-0 font-[inherit] text-xs leading-[1.55] outline-none placeholder:text-muted-foreground/45',
+        className,
+      )}
+    />
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Main NoteView Component
+// ---------------------------------------------------------------------------
 
 export const NoteView: React.FC<NoteViewProps> = ({ noteId, standalone = false }) => {
   const {
@@ -459,16 +817,19 @@ export const NoteView: React.FC<NoteViewProps> = ({ noteId, standalone = false }
 
   // Toolbar & overlays
   const [showFormatBar, setShowFormatBar] = useState(false);
-  const [showInsertMenu, setShowInsertMenu] = useState(false);
   const [showOutline, setShowOutline] = useState(true);
   const [outlineHover, setOutlineHover] = useState(false);
   const [standalonePinned, setStandalonePinned] = useState(false);
+
+  // Anchor element for '@' link picker Popover
+  const [headerEl, setHeaderEl] = useState<HTMLDivElement | null>(null);
 
   // Structured block state for normal note
   const [blocks, setBlocks] = useState<NoteBlock[]>(() =>
     parseContentToBlocks(note?.content ?? ''),
   );
   const [focusedBlockId, setFocusedBlockId] = useState<string | null>(null);
+  const lastActiveBlockIdRef = useRef<string | null>(null);
   const [collapsedHeadings, setCollapsedHeadings] = useState<Set<string>>(() => new Set());
   const [activeHeadingId, setActiveHeadingId] = useState<string | null>(null);
   const lastSerializedRef = useRef<string>(note?.content ?? '');
@@ -481,6 +842,7 @@ export const NoteView: React.FC<NoteViewProps> = ({ noteId, standalone = false }
       lastSerializedRef.current = note.content;
       setBlocks(parseContentToBlocks(note.content));
       setCollapsedHeadings(new Set());
+      setFocusedBlockId(null);
     }
   }, [note?.id, note?.content]);
 
@@ -554,6 +916,11 @@ export const NoteView: React.FC<NoteViewProps> = ({ noteId, standalone = false }
     }
   };
 
+  const markBlockFocused = (blockId: string) => {
+    setFocusedBlockId(blockId);
+    lastActiveBlockIdRef.current = blockId;
+  };
+
   // Block mutations
   const updateBlockText = (blockId: string, text: string) => {
     // Detect "@" trigger at end of text
@@ -590,7 +957,7 @@ export const NoteView: React.FC<NoteViewProps> = ({ noteId, standalone = false }
     const pos = idx >= 0 ? idx + 1 : blocks.length;
     const next = [...blocks.slice(0, pos), newBlock, ...blocks.slice(pos)];
     commitBlocks(next);
-    setFocusedBlockId(newBlock.id);
+    markBlockFocused(newBlock.id);
   };
 
   const removeBlock = (blockId: string) => {
@@ -599,12 +966,16 @@ export const NoteView: React.FC<NoteViewProps> = ({ noteId, standalone = false }
       return;
     }
     commitBlocks(blocks.filter((b) => b.id !== blockId));
+    if (focusedBlockId === blockId) {
+      setFocusedBlockId(null);
+    }
   };
 
   const applyFormatAction = (
     kind: 'h1' | 'h2' | 'h3' | 'bold' | 'italic' | 'list' | 'quote' | 'code',
   ) => {
-    const targetId = focusedBlockId ?? blocks[blocks.length - 1]?.id;
+    const targetId =
+      focusedBlockId ?? lastActiveBlockIdRef.current ?? blocks[blocks.length - 1]?.id;
     if (!targetId) return;
     const next = blocks.map((b) => {
       if (b.id !== targetId) return b;
@@ -628,10 +999,10 @@ export const NoteView: React.FC<NoteViewProps> = ({ noteId, standalone = false }
       return { id: b.id, type: 'paragraph' as const, text: `${b.text}${prefix}` };
     });
     commitBlocks(next);
+    markBlockFocused(targetId);
   };
 
   const handleInsertTable = () => {
-    setShowInsertMenu(false);
     const tbl: NoteBlock = {
       id: `blk_${Date.now().toString(36)}`,
       type: 'table',
@@ -640,7 +1011,7 @@ export const NoteView: React.FC<NoteViewProps> = ({ noteId, standalone = false }
         ['待补充', '', '进行中'],
       ],
     };
-    insertBlockAfter(focusedBlockId, tbl);
+    insertBlockAfter(focusedBlockId ?? lastActiveBlockIdRef.current, tbl);
   };
 
   const updateTableCell = (blockId: string, rIdx: number, cIdx: number, val: string) => {
@@ -676,7 +1047,11 @@ export const NoteView: React.FC<NoteViewProps> = ({ noteId, standalone = false }
   };
 
   // File & Image upload handlers
-  const handleFileUpload = async (files: FileList | null, forcedKind?: AttachmentKind, forTimeline = false) => {
+  const handleFileUpload = async (
+    files: FileList | null,
+    forcedKind?: AttachmentKind,
+    forTimeline = false,
+  ) => {
     if (!files || files.length === 0 || !note) return;
     const added: AttachmentRef[] = [];
     for (const file of Array.from(files)) {
@@ -812,232 +1187,172 @@ export const NoteView: React.FC<NoteViewProps> = ({ noteId, standalone = false }
   };
 
   const isWindowsStandalone = standalone && platform.platform === 'windows';
-  const standaloneShellStyle: React.CSSProperties = {
-    display: 'flex',
-    flexDirection: 'column',
-    width: '100%',
-    height: '100%',
-    minHeight: 0,
-    background: 'var(--bg-panel)',
-    color: 'var(--text-primary)',
-    position: 'relative',
-    borderRadius: standalone && !isWindowsStandalone ? 12 : 0,
-    overflow: 'hidden',
-    border: standalone && !isWindowsStandalone ? '1px solid var(--border)' : 'none',
-  };
+  const shellClassName = cn(
+    'dt-note-view relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-background text-foreground',
+    standalone && !isWindowsStandalone && 'rounded-xl border',
+  );
 
   const renderStandaloneTitlebar = (titleText: string, kind: 'normal' | 'timeline' = 'normal') => (
     <header
       data-tauri-drag-region
-      style={{
-        height: 38,
-        flexShrink: 0,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '0 8px 0 14px',
-        background: 'var(--bg-header)',
-        borderBottom: '1px solid var(--border)',
-        userSelect: 'none',
-      }}
+      className="flex h-9.5 shrink-0 select-none items-center justify-between border-b bg-sidebar pr-2 pl-3.5"
     >
       <div
         data-tauri-drag-region
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 7,
-          fontSize: 13,
-          fontWeight: 600,
-          minWidth: 0,
-        }}
+        className="flex min-w-0 items-center gap-2 font-semibold text-foreground text-xs"
       >
         {kind === 'timeline' ? (
-          <TimelineIcon size={15} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+          <ClockIcon className="size-3.5 shrink-0 text-dt-accent" aria-hidden="true" />
         ) : (
-          <NoteIcon size={15} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+          <StickyNoteIcon className="size-3.5 shrink-0 text-dt-accent" aria-hidden="true" />
         )}
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <span data-tauri-drag-region className="truncate">
           {titleText}
         </span>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
-        <button
-          type="button"
-          title={standalonePinned ? '取消置顶' : '窗口置顶'}
-          onClick={() => void handleToggleStandalonePin()}
-          style={{
-            width: 26,
-            height: 26,
-            border: 'none',
-            borderRadius: 6,
-            background: standalonePinned ? 'var(--accent-soft)' : 'transparent',
-            color: standalonePinned ? 'var(--accent-soft-text)' : 'var(--text-secondary)',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-          }}
-        >
-          <PinIcon size={14} />
-        </button>
-        <button
-          type="button"
-          title="最小化"
-          onClick={() => void handleStandaloneMinimize()}
-          style={{
-            width: 26,
-            height: 26,
-            border: 'none',
-            borderRadius: 6,
-            background: 'transparent',
-            color: 'var(--text-secondary)',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-          }}
-        >
-          <MinimizeIcon size={14} />
-        </button>
-        <button
-          type="button"
-          title="关闭窗口"
-          onClick={() => void handleStandaloneClose()}
-          style={{
-            width: 26,
-            height: 26,
-            border: 'none',
-            borderRadius: 6,
-            background: 'transparent',
-            color: 'var(--text-secondary)',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-          }}
-        >
-          <CloseIcon size={14} />
-        </button>
+
+      <div className="flex shrink-0 items-center gap-0.5">
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                aria-label={standalonePinned ? '取消置顶' : '窗口置顶'}
+                size="icon-xs"
+                variant="ghost"
+                onClick={() => void handleToggleStandalonePin()}
+                className={cn(
+                  standalonePinned && 'bg-dt-accent-soft text-dt-accent-soft-text',
+                )}
+              />
+            }
+          >
+            <PinIcon aria-hidden="true" />
+          </TooltipTrigger>
+          <TooltipPopup>{standalonePinned ? '取消置顶' : '窗口置顶'}</TooltipPopup>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                aria-label="最小化"
+                size="icon-xs"
+                variant="ghost"
+                onClick={() => void handleStandaloneMinimize()}
+              />
+            }
+          >
+            <MinusIcon aria-hidden="true" />
+          </TooltipTrigger>
+          <TooltipPopup>最小化</TooltipPopup>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                aria-label="关闭窗口"
+                size="icon-xs"
+                variant="ghost"
+                onClick={() => void handleStandaloneClose()}
+              />
+            }
+          >
+            <XIcon aria-hidden="true" />
+          </TooltipTrigger>
+          <TooltipPopup>关闭窗口</TooltipPopup>
+        </Tooltip>
       </div>
     </header>
   );
 
+  // Missing note state
   if (!note) {
     return (
-      <div className="dt-note-view" style={standaloneShellStyle}>
+      <div className={shellClassName}>
         {standalone && renderStandaloneTitlebar('独立便签')}
-        <div
-          style={{
-            flex: 1,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 12,
-            color: 'var(--text-muted)',
-            fontSize: 13.5,
-            padding: 24,
-          }}
-        >
-          <span>未找到该便签（可能已被删除）。</span>
+        <Empty className="py-12">
+          <EmptyMedia variant="icon">
+            <StickyNoteIcon aria-hidden="true" />
+          </EmptyMedia>
+          <EmptyHeader>
+            <EmptyTitle className="text-base">未找到该便签</EmptyTitle>
+            <EmptyDescription>该便签可能已被删除或尚未同步。</EmptyDescription>
+          </EmptyHeader>
           {standalone && (
-            <button
-              type="button"
-              className="dt-btn dt-btn-ghost"
-              onClick={() => void handleStandaloneClose()}
-            >
-              关闭窗口
-            </button>
+            <EmptyContent>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void handleStandaloneClose()}
+              >
+                关闭窗口
+              </Button>
+            </EmptyContent>
           )}
-        </div>
+        </Empty>
       </div>
     );
   }
 
+  // Privacy-lock unlock gate
   if (isGroupLocked && noteGroup) {
     return (
-      <div className="dt-note-view" style={standaloneShellStyle}>
+      <div className={shellClassName}>
         {standalone && renderStandaloneTitlebar(note.title || '独立便签', note.kind)}
-        <div
-          style={{
-            flex: 1,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 12,
-            padding: 28,
-            background: 'var(--bg-panel)',
-          }}
-        >
-          <div
-            style={{
-              width: 48,
-              height: 48,
-              borderRadius: '50%',
-              background: 'var(--accent-soft)',
-              color: 'var(--accent)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <LockIcon size={22} />
-          </div>
-          <div style={{ fontWeight: 600, fontSize: 15 }}>分组「{noteGroup.name}」已启用隐私锁</div>
-          <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>
-            输入 4–6 位密码后即可查看和编辑「{note.title || '未命名便签'}」
-          </div>
-          <form
-            onSubmit={(e) => void handleUnlockGroup(e)}
-            style={{ display: 'flex', gap: 8, marginTop: 4 }}
-          >
-            <input
-              type="password"
-              inputMode="numeric"
-              maxLength={6}
-              value={pinInput}
-              onChange={(e) => {
-                setPinInput(e.target.value);
-                setPinError(null);
-              }}
-              placeholder="输入分组 PIN"
-              style={{
-                width: 150,
-                padding: '7px 10px',
-                borderRadius: 9,
-                border: '1px solid var(--border)',
-                background: 'var(--bg-input)',
-                color: 'var(--text-primary)',
-                fontSize: 14,
-                textAlign: 'center',
-                letterSpacing: '0.2em',
-              }}
-            />
-            <button
-              type="submit"
-              style={{
-                padding: '7px 14px',
-                borderRadius: 9,
-                border: 'none',
-                background: 'var(--accent)',
-                color: 'var(--accent-text)',
-                fontWeight: 600,
-                fontSize: 13,
-                cursor: 'pointer',
-              }}
-            >
-              解锁
-            </button>
-          </form>
-          {pinError && <div style={{ fontSize: 12, color: 'var(--danger)' }}>{pinError}</div>}
+        <div className="flex flex-1 items-center justify-center p-6">
+          <Card className="w-full max-w-xs rounded-2xl">
+            <CardHeader className="items-center text-center">
+              <div className="mb-1 flex size-10 items-center justify-center rounded-xl border bg-coss-frame-well text-dt-accent">
+                <LockIcon className="size-4.5" aria-hidden="true" />
+              </div>
+              <CardTitle className="text-sm">
+                分组「{noteGroup.name}」已启用隐私锁
+              </CardTitle>
+              <CardDescription className="text-xs leading-relaxed">
+                输入 4–6 位数字密码后即可查看和编辑「{note.title || '未命名便签'}」
+              </CardDescription>
+            </CardHeader>
+            <CardPanel className="flex flex-col gap-3">
+              <form
+                onSubmit={(e) => void handleUnlockGroup(e)}
+                className="flex items-center gap-2"
+              >
+                <Input
+                  type="password"
+                  inputMode="numeric"
+                  maxLength={6}
+                  autoFocus
+                  value={pinInput}
+                  onChange={(e) => {
+                    setPinInput(e.target.value);
+                    setPinError(null);
+                  }}
+                  placeholder="输入分组 PIN"
+                  className="flex-1 text-center [&_[data-slot=input]]:text-center [&_[data-slot=input]]:tracking-[0.22em]"
+                />
+                <Button type="submit" size="default">
+                  解锁
+                </Button>
+              </form>
+              {pinError && (
+                <Alert variant="error" className="py-2">
+                  <AlertCircleIcon className="size-4" aria-hidden="true" />
+                  <AlertDescription className="text-destructive-foreground">
+                    {pinError}
+                  </AlertDescription>
+                </Alert>
+              )}
+            </CardPanel>
+          </Card>
         </div>
       </div>
     );
   }
 
-  const savedClock = formatTimeHMS(new Date(note.updatedAt || Date.now()));
+  const updatedDate = new Date(note.updatedAt || Date.now());
+  const savedShortClock = formatTimeHM(updatedDate);
+  const savedExactClock = formatTimeHMS(updatedDate);
   const totalCharCount =
     note.kind === 'normal'
       ? countVisibleChars(note.content)
@@ -1047,14 +1362,14 @@ export const NoteView: React.FC<NoteViewProps> = ({ noteId, standalone = false }
   const noteOtherAttachments = note.attachments.filter((a) => a.kind !== 'image');
 
   return (
-    <div className="dt-note-view" style={standaloneShellStyle}>
+    <div className={shellClassName}>
       {/* Hidden file inputs */}
       <input
         ref={imageInputRef}
         type="file"
         accept="image/*"
         multiple
-        style={{ display: 'none' }}
+        className="hidden"
         onChange={(e) => {
           void handleFileUpload(e.target.files, 'image', false);
           e.target.value = '';
@@ -1064,7 +1379,7 @@ export const NoteView: React.FC<NoteViewProps> = ({ noteId, standalone = false }
         ref={fileInputRef}
         type="file"
         multiple
-        style={{ display: 'none' }}
+        className="hidden"
         onChange={(e) => {
           void handleFileUpload(e.target.files, undefined, false);
           e.target.value = '';
@@ -1074,7 +1389,7 @@ export const NoteView: React.FC<NoteViewProps> = ({ noteId, standalone = false }
         ref={timelineFileRef}
         type="file"
         multiple
-        style={{ display: 'none' }}
+        className="hidden"
         onChange={(e) => {
           void handleFileUpload(e.target.files, undefined, true);
           e.target.value = '';
@@ -1084,1042 +1399,831 @@ export const NoteView: React.FC<NoteViewProps> = ({ noteId, standalone = false }
       {/* Standalone Window Titlebar */}
       {standalone && renderStandaloneTitlebar(note.title || '独立便签', note.kind)}
 
-      {/* Note Sub-header */}
+      {/* Note Toolbar Header */}
       <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 8,
-          padding: '9px 14px',
-          borderBottom: '1px solid var(--border)',
-          background: 'var(--bg-panel)',
-          flexShrink: 0,
-          position: 'relative',
-        }}
+        ref={setHeaderEl}
+        className="relative flex shrink-0 items-center justify-between gap-2 border-b bg-background px-3.5 py-2"
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+        <div className="flex min-w-0 flex-1 items-center gap-2">
           {navHistory.length > 0 && (
-            <button
-              type="button"
-              title={`返回 ${navHistory[navHistory.length - 1]?.label ?? ''}`}
-              onClick={navigateBack}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 3,
-                padding: '2px 7px',
-                borderRadius: 999,
-                border: '1px solid var(--border)',
-                background: 'var(--bg-surface)',
-                color: 'var(--text-secondary)',
-                fontSize: 11.5,
-                cursor: 'pointer',
-                flexShrink: 0,
-              }}
-            >
-              <ArrowLeftIcon size={12} />
-              <span>返回</span>
-            </button>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    onClick={navigateBack}
+                    className="shrink-0 gap-1"
+                  />
+                }
+              >
+                <ArrowLeftIcon className="size-3" aria-hidden="true" />
+                <span>返回</span>
+              </TooltipTrigger>
+              <TooltipPopup>
+                返回 {navHistory[navHistory.length - 1]?.label ?? ''}
+              </TooltipPopup>
+            </Tooltip>
           )}
+
           <input
             type="text"
             value={note.title}
             onChange={(e) => updateNote(note.id, { title: e.target.value })}
             placeholder="未命名便签"
-            style={{
-              flex: '0 1 180px',
-              minWidth: 72,
-              border: 'none',
-              outline: 'none',
-              background: 'transparent',
-              color: 'var(--text-primary)',
-              fontSize: 15,
-              fontWeight: 700,
-              padding: 0,
-            }}
+            aria-label="便签标题"
+            className="field-sizing-content min-w-14 max-w-[calc(100%-78px)] truncate border-none bg-transparent p-0 font-bold text-[15px] leading-tight text-foreground outline-none placeholder:text-muted-foreground/55"
           />
+
           <span
-            style={{
-              fontSize: 11.5,
-              color: 'var(--text-muted)',
-              whiteSpace: 'nowrap',
-              fontVariantNumeric: 'tabular-nums',
-            }}
+            title={`最后保存于 ${savedExactClock}`}
+            className="shrink-0 text-[11px] text-muted-foreground tabular-nums"
           >
-            已保存 {savedClock}
+            已保存 {savedShortClock}
           </span>
         </div>
 
-        {/* 5 Right Toolbar Actions */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 2, position: 'relative' }}>
-          {note.kind === 'normal' && (
-            <button
-              type="button"
-              title="文本格式工具栏"
-              onClick={() => {
-                setShowFormatBar((v) => !v);
-                setShowInsertMenu(false);
-              }}
-              style={{
-                width: 28,
-                height: 28,
-                border: 'none',
-                borderRadius: 7,
-                background: showFormatBar ? 'var(--accent-soft)' : 'transparent',
-                color: showFormatBar ? 'var(--accent-soft-text)' : 'var(--text-secondary)',
-                fontWeight: 700,
-                fontFamily: 'Georgia, serif',
-                fontSize: 14,
-                cursor: 'pointer',
-              }}
-            >
-              A
-            </button>
-          )}
+        {/* Right coss Toolbar */}
+        <Toolbar className="shrink-0 gap-0.5 rounded-lg p-0.5 shadow-2xs">
+          <ToolbarGroup className="gap-0.5">
+            {note.kind === 'normal' && (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <ToolbarButton
+                      aria-label="文本格式工具栏"
+                      aria-pressed={showFormatBar}
+                      render={
+                        <Button
+                          size="icon-xs"
+                          variant="ghost"
+                          onClick={() => setShowFormatBar((v) => !v)}
+                          className={cn(
+                            'font-serif font-semibold text-[13px]',
+                            showFormatBar
+                              ? 'bg-accent text-foreground'
+                              : 'text-muted-foreground hover:text-foreground',
+                          )}
+                        />
+                      }
+                    />
+                  }
+                >
+                  A
+                </TooltipTrigger>
+                <TooltipPopup>文本格式工具栏</TooltipPopup>
+              </Tooltip>
+            )}
 
-          <button
-            type="button"
-            title="插入内容 / 切换模式"
-            onClick={() => {
-              setShowInsertMenu((v) => !v);
-              setShowFormatBar(false);
-            }}
-            style={{
-              width: 28,
-              height: 28,
-              border: 'none',
-              borderRadius: 7,
-              background: showInsertMenu ? 'var(--accent-soft)' : 'transparent',
-              color: showInsertMenu ? 'var(--accent-soft-text)' : 'var(--text-secondary)',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-            }}
-          >
-            <PlusIcon size={15} />
-          </button>
-
-          {note.kind === 'normal' && (
-            <button
-              type="button"
-              title={showOutline ? '隐藏右侧文档大纲' : '显示右侧文档大纲'}
-              onClick={() => setShowOutline((v) => !v)}
-              style={{
-                width: 28,
-                height: 28,
-                border: 'none',
-                borderRadius: 7,
-                background: showOutline ? 'var(--accent-soft)' : 'transparent',
-                color: showOutline ? 'var(--accent-soft-text)' : 'var(--text-secondary)',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-              }}
-            >
-              <OutlineIcon size={15} />
-            </button>
-          )}
-
-          <button
-            type="button"
-            title={note.pinnedToSide ? '取消固定到侧边页签' : '固定到侧边页签'}
-            onClick={() => {
-              toggleNotePin(note.id);
-              showToast(note.pinnedToSide ? '已取消固定到侧边页签' : '已固定到侧边页签');
-            }}
-            style={{
-              width: 28,
-              height: 28,
-              border: 'none',
-              borderRadius: 7,
-              background: note.pinnedToSide ? 'var(--accent-soft)' : 'transparent',
-              color: note.pinnedToSide ? 'var(--accent-soft-text)' : 'var(--text-secondary)',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-            }}
-          >
-            <PinIcon size={14} />
-          </button>
-
-          {!standalone ? (
-            <button
-              type="button"
-              title="独立窗口打开"
-              onClick={() => {
-                void openNoteWindow(note.id).catch((err) => {
-                  showToast(
-                    `打开独立便签失败：${err instanceof Error ? err.message : String(err)}`,
-                  );
-                });
-              }}
-              style={{
-                width: 28,
-                height: 28,
-                border: 'none',
-                borderRadius: 7,
-                background: 'transparent',
-                color: 'var(--text-secondary)',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-              }}
-            >
-              <PopoutIcon size={14} />
-            </button>
-          ) : (
-            <button
-              type="button"
-              title="导出当前便签 (Markdown)"
-              onClick={() =>
-                void exportDeskTagDocument(data, 'markdown', { noteId: note.id })
-                  .then((r) => showToast(r.message))
-                  .catch((err) => {
-                    showToast(`导出失败：${err instanceof Error ? err.message : String(err)}`);
-                  })
-              }
-              style={{
-                width: 28,
-                height: 28,
-                border: 'none',
-                borderRadius: 7,
-                background: 'transparent',
-                color: 'var(--text-secondary)',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-              }}
-            >
-              <ExportIcon size={14} />
-            </button>
-          )}
-
-          {/* Insert Menu Popover */}
-          {showInsertMenu && (
-            <div
-              style={{
-                position: 'absolute',
-                top: 'calc(100% + 6px)',
-                right: 36,
-                width: 176,
-                padding: 6,
-                borderRadius: 11,
-                background: 'var(--bg-popover)',
-                border: '1px solid var(--border)',
-                boxShadow: 'var(--shadow-popover)',
-                zIndex: 45,
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 2,
-              }}
-            >
-              {note.kind === 'normal' && (
-                <button
-                  type="button"
-                  onClick={handleInsertTable}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    padding: '6px 9px',
-                    border: 'none',
-                    borderRadius: 7,
-                    background: 'transparent',
-                    color: 'var(--text-primary)',
-                    fontSize: 12.5,
-                    cursor: 'pointer',
+            <Menu>
+              <MenuTrigger
+                render={
+                  <ToolbarButton
+                    aria-label="插入内容或切换模式"
+                    render={
+                      <Button
+                        size="icon-xs"
+                        variant="ghost"
+                        title="插入内容 / 切换模式"
+                        className="text-muted-foreground hover:text-foreground"
+                      />
+                    }
+                  />
+                }
+              >
+                <PlusIcon aria-hidden="true" />
+              </MenuTrigger>
+              <MenuPopup align="end" sideOffset={6} className="min-w-44">
+                <MenuGroup>
+                  {note.kind === 'normal' && (
+                    <MenuItem onClick={handleInsertTable}>
+                      <TableIcon aria-hidden="true" />
+                      <span>插入表格</span>
+                    </MenuItem>
+                  )}
+                  <MenuItem
+                    onClick={() => {
+                      if (note.kind === 'timeline') timelineFileRef.current?.click();
+                      else imageInputRef.current?.click();
+                    }}
+                  >
+                    <ImageIcon aria-hidden="true" />
+                    <span>插入图片</span>
+                  </MenuItem>
+                  <MenuItem
+                    onClick={() => {
+                      if (note.kind === 'timeline') timelineFileRef.current?.click();
+                      else fileInputRef.current?.click();
+                    }}
+                  >
+                    <PaperclipIcon aria-hidden="true" />
+                    <span>插入文件附件</span>
+                  </MenuItem>
+                  <MenuItem
+                    onClick={() => {
+                      setReplacingLinkTargetId(null);
+                      setLinkSearch('');
+                      setShowLinkPicker(true);
+                    }}
+                  >
+                    <Link2Icon aria-hidden="true" />
+                    <span>@ 关联待办 / 便签</span>
+                  </MenuItem>
+                </MenuGroup>
+                <MenuSeparator />
+                <MenuItem
+                  onClick={() => {
+                    const nextKind = note.kind === 'normal' ? 'timeline' : 'normal';
+                    updateNote(note.id, { kind: nextKind });
+                    showToast(
+                      nextKind === 'timeline' ? '已切换为时间轴便签' : '已切换为普通便签',
+                    );
                   }}
                 >
-                  <TableIcon size={14} />
-                  <span>插入表格</span>
-                </button>
-              )}
+                  {note.kind === 'normal' ? (
+                    <ClockIcon aria-hidden="true" />
+                  ) : (
+                    <StickyNoteIcon aria-hidden="true" />
+                  )}
+                  <span>
+                    {note.kind === 'normal' ? '切换为时间轴便签' : '切换为普通便签'}
+                  </span>
+                </MenuItem>
+              </MenuPopup>
+            </Menu>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setShowInsertMenu(false);
-                  if (note.kind === 'timeline') timelineFileRef.current?.click();
-                  else imageInputRef.current?.click();
-                }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '6px 9px',
-                  border: 'none',
-                  borderRadius: 7,
-                  background: 'transparent',
-                  color: 'var(--text-primary)',
-                  fontSize: 12.5,
-                  cursor: 'pointer',
-                }}
+            {note.kind === 'normal' && (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <ToolbarButton
+                      aria-label={showOutline ? '隐藏右侧文档大纲' : '显示右侧文档大纲'}
+                      aria-pressed={showOutline}
+                      render={
+                        <Button
+                          size="icon-xs"
+                          variant="ghost"
+                          onClick={() => setShowOutline((v) => !v)}
+                          className={cn(
+                            showOutline
+                              ? 'bg-accent text-foreground'
+                              : 'text-muted-foreground hover:text-foreground',
+                          )}
+                        />
+                      }
+                    />
+                  }
+                >
+                  <ListTreeIcon aria-hidden="true" />
+                </TooltipTrigger>
+                <TooltipPopup>
+                  {showOutline ? '隐藏右侧文档大纲' : '显示右侧文档大纲'}
+                </TooltipPopup>
+              </Tooltip>
+            )}
+          </ToolbarGroup>
+
+          <ToolbarSeparator orientation="vertical" className="mx-0.5 my-1" />
+
+          <ToolbarGroup className="gap-0.5">
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <ToolbarButton
+                    aria-label={
+                      note.pinnedToSide ? '取消固定到侧边页签' : '固定到侧边页签'
+                    }
+                    aria-pressed={note.pinnedToSide}
+                    render={
+                      <Button
+                        size="icon-xs"
+                        variant="ghost"
+                        onClick={() => {
+                          toggleNotePin(note.id);
+                          showToast(
+                            note.pinnedToSide ? '已取消固定到侧边页签' : '已固定到侧边页签',
+                          );
+                        }}
+                        className={cn(
+                          note.pinnedToSide
+                            ? 'bg-dt-accent-soft text-dt-accent-soft-text'
+                            : 'text-muted-foreground hover:text-foreground',
+                        )}
+                      />
+                    }
+                  />
+                }
               >
-                <ImageIcon size={14} />
-                <span>插入图片</span>
-              </button>
+                <PinIcon aria-hidden="true" />
+              </TooltipTrigger>
+              <TooltipPopup>
+                {note.pinnedToSide ? '取消固定到侧边页签' : '固定到侧边页签'}
+              </TooltipPopup>
+            </Tooltip>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setShowInsertMenu(false);
-                  if (note.kind === 'timeline') timelineFileRef.current?.click();
-                  else fileInputRef.current?.click();
-                }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '6px 9px',
-                  border: 'none',
-                  borderRadius: 7,
-                  background: 'transparent',
-                  color: 'var(--text-primary)',
-                  fontSize: 12.5,
-                  cursor: 'pointer',
-                }}
-              >
-                <FileIcon size={14} />
-                <span>插入文件附件</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setShowInsertMenu(false);
-                  setReplacingLinkTargetId(null);
-                  setLinkSearch('');
-                  setShowLinkPicker(true);
-                }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '6px 9px',
-                  border: 'none',
-                  borderRadius: 7,
-                  background: 'transparent',
-                  color: 'var(--text-primary)',
-                  fontSize: 12.5,
-                  cursor: 'pointer',
-                }}
-              >
-                <LinkIcon size={14} />
-                <span>@ 关联待办 / 便签</span>
-              </button>
-
-              <div style={{ height: 1, background: 'var(--border)', margin: '3px 4px' }} />
-
-              <button
-                type="button"
-                onClick={() => {
-                  setShowInsertMenu(false);
-                  const nextKind = note.kind === 'normal' ? 'timeline' : 'normal';
-                  updateNote(note.id, { kind: nextKind });
-                  showToast(nextKind === 'timeline' ? '已切换为时间轴便签' : '已切换为普通便签');
-                }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '6px 9px',
-                  border: 'none',
-                  borderRadius: 7,
-                  background: 'transparent',
-                  color: 'var(--accent)',
-                  fontSize: 12.5,
-                  cursor: 'pointer',
-                }}
-              >
-                {note.kind === 'normal' ? <TimelineIcon size={14} /> : <NoteIcon size={14} />}
-                <span>{note.kind === 'normal' ? '切换为时间轴便签' : '切换为普通便签'}</span>
-              </button>
-            </div>
-          )}
-        </div>
+            {!standalone ? (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <ToolbarButton
+                      aria-label="独立窗口打开"
+                      render={
+                        <Button
+                          size="icon-xs"
+                          variant="ghost"
+                          onClick={() => {
+                            void openNoteWindow(note.id).catch((err) => {
+                              showToast(
+                                `打开独立便签失败：${err instanceof Error ? err.message : String(err)}`,
+                              );
+                            });
+                          }}
+                          className="text-muted-foreground hover:text-foreground"
+                        />
+                      }
+                    />
+                  }
+                >
+                  <ExternalLinkIcon aria-hidden="true" />
+                </TooltipTrigger>
+                <TooltipPopup>独立窗口打开</TooltipPopup>
+              </Tooltip>
+            ) : (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <ToolbarButton
+                      aria-label="导出当前便签 (Markdown)"
+                      render={
+                        <Button
+                          size="icon-xs"
+                          variant="ghost"
+                          onClick={() =>
+                            void exportDeskTagDocument(data, 'markdown', { noteId: note.id })
+                              .then((r) => showToast(r.message))
+                              .catch((err) => {
+                                showToast(
+                                  `导出失败：${err instanceof Error ? err.message : String(err)}`,
+                                );
+                              })
+                          }
+                          className="text-muted-foreground hover:text-foreground"
+                        />
+                      }
+                    />
+                  }
+                >
+                  <DownloadIcon aria-hidden="true" />
+                </TooltipTrigger>
+                <TooltipPopup>导出当前便签 (Markdown)</TooltipPopup>
+              </Tooltip>
+            )}
+          </ToolbarGroup>
+        </Toolbar>
       </div>
 
       {/* Formatting Toolbar (when 'A' is active in normal mode) */}
       {note.kind === 'normal' && showFormatBar && (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 4,
-            flexWrap: 'wrap',
-            padding: '6px 14px',
-            background: 'var(--bg-header)',
-            borderBottom: '1px solid var(--border)',
-            flexShrink: 0,
-          }}
-        >
+        <div className="flex shrink-0 flex-wrap items-center gap-1 border-b bg-coss-frame-well px-3.5 py-1.5">
           {(
             [
-              ['h1', 'H1'],
-              ['h2', 'H2'],
-              ['h3', 'H3'],
-              ['bold', 'B'],
-              ['italic', 'I'],
-              ['list', '• 列表'],
-              ['quote', '❝ 引用'],
-              ['code', '</> 代码'],
+              ['h1', 'H1', Heading1Icon],
+              ['h2', 'H2', Heading2Icon],
+              ['h3', 'H3', Heading3Icon],
+              ['bold', '加粗', BoldIcon],
+              ['italic', '斜体', ItalicIcon],
+              ['list', '列表', ListIcon],
+              ['quote', '引用', QuoteIcon],
+              ['code', '代码', CodeIcon],
             ] as const
-          ).map(([action, label]) => (
-            <button
+          ).map(([action, label, IconComp]) => (
+            <Button
               key={action}
-              type="button"
+              size="xs"
+              variant="outline"
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => applyFormatAction(action)}
-              style={{
-                padding: '3px 8px',
-                borderRadius: 6,
-                border: '1px solid var(--border)',
-                background: 'var(--bg-surface)',
-                color: 'var(--text-primary)',
-                fontSize: 12,
-                fontWeight: action === 'bold' || action.startsWith('h') ? 700 : 500,
-                fontStyle: action === 'italic' ? 'italic' : 'normal',
-                cursor: 'pointer',
-              }}
+              className="gap-1 text-foreground"
             >
-              {label}
-            </button>
+              <IconComp className="size-3" aria-hidden="true" />
+              <span>{label}</span>
+            </Button>
           ))}
         </div>
       )}
 
       {/* Bidirectional '@' Content Links Strip */}
       {note.links.length > 0 && (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            flexWrap: 'wrap',
-            padding: '7px 18px',
-            borderBottom: '1px dashed var(--border)',
-            background: 'var(--bg-panel)',
-            fontSize: 12.5,
-            flexShrink: 0,
-          }}
-        >
-          <span style={{ color: 'var(--text-secondary)' }}>相关记录：</span>
+        <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b bg-background px-3.5 py-2">
+          <span className="inline-flex shrink-0 items-center gap-1 text-muted-foreground text-xs">
+            <Link2Icon className="size-3.5 opacity-75" aria-hidden="true" />
+            <span>关联</span>
+          </span>
           {note.links.map((link) => (
-            <span
+            <Badge
               key={`${link.targetType}-${link.targetId}`}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 4,
-                padding: '1px 6px',
-                borderRadius: 6,
-                background: 'var(--accent-soft)',
-              }}
+              variant="outline"
+              className="group/chip h-6 max-w-full gap-1 rounded-md bg-card px-2 font-normal text-foreground shadow-2xs transition-colors hover:border-ring/50"
             >
+              {link.targetType === 'todo' ? (
+                <CheckSquareIcon
+                  className="size-3 shrink-0 text-info"
+                  aria-hidden="true"
+                />
+              ) : (
+                <StickyNoteIcon
+                  className="size-3 shrink-0 text-warning"
+                  aria-hidden="true"
+                />
+              )}
               <button
                 type="button"
                 onClick={() => openContentLink(link)}
-                style={{
-                  border: 'none',
-                  background: 'transparent',
-                  padding: 0,
-                  color: 'var(--accent)',
-                  textDecoration: 'underline',
-                  textUnderlineOffset: 3,
-                  fontSize: 12.5,
-                  fontWeight: 500,
-                  cursor: 'pointer',
-                }}
+                className="max-w-56 cursor-pointer truncate border-none bg-transparent p-0 text-left font-medium text-xs text-foreground hover:underline underline-offset-2"
               >
                 {link.label}
               </button>
               <button
                 type="button"
+                aria-label="替换关联对象"
                 title="替换关联对象"
                 onClick={() => {
                   setReplacingLinkTargetId(link.targetId);
                   setLinkSearch('');
                   setShowLinkPicker(true);
                 }}
-                style={{
-                  border: 'none',
-                  background: 'transparent',
-                  padding: '0 2px',
-                  color: 'var(--text-muted)',
-                  fontSize: 11,
-                  cursor: 'pointer',
-                }}
+                className="inline-flex size-4 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground opacity-55 transition-opacity hover:bg-accent hover:text-foreground hover:opacity-100"
               >
-                ⇄
+                <ArrowLeftRightIcon className="size-2.5" aria-hidden="true" />
               </button>
               <button
                 type="button"
+                aria-label="取消关联"
                 title="取消关联"
                 onClick={() => removeContentLink('note', note.id, link.targetId)}
-                style={{
-                  border: 'none',
-                  background: 'transparent',
-                  padding: '0 2px',
-                  color: 'var(--text-muted)',
-                  fontSize: 12,
-                  cursor: 'pointer',
-                }}
+                className="inline-flex size-4 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground opacity-65 transition-opacity hover:bg-accent hover:text-foreground hover:opacity-100"
               >
-                ×
+                <XIcon className="size-3" aria-hidden="true" />
               </button>
-            </span>
+            </Badge>
           ))}
         </div>
       )}
 
-      {/* '@' Searchable Content Link Picker Overlay */}
-      {showLinkPicker && (
-        <div
-          style={{
-            position: 'absolute',
-            top: standalone ? 92 : 52,
-            left: 16,
-            right: 16,
-            maxWidth: 360,
-            padding: 10,
-            borderRadius: 12,
-            background: 'var(--bg-popover)',
-            border: '1px solid var(--accent-border)',
-            boxShadow: 'var(--shadow-popover)',
-            zIndex: 55,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 8,
-          }}
+      {/* '@' Searchable Content Link Picker Popover */}
+      <Popover
+        open={showLinkPicker}
+        onOpenChange={(open) => {
+          setShowLinkPicker(open);
+          if (!open) {
+            setReplacingLinkTargetId(null);
+            setLinkSearch('');
+          }
+        }}
+      >
+        <PopoverPopup
+          anchor={headerEl}
+          align="start"
+          alignOffset={14}
+          side="bottom"
+          sideOffset={6}
+          className="w-80 max-w-[calc(100%-28px)]"
         >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <strong style={{ fontSize: 12.5 }}>
-              {replacingLinkTargetId ? '替换 @ 关联内容' : '选择要 @ 关联的待办或便签'}
-            </strong>
-            <button
-              type="button"
-              onClick={() => {
-                setShowLinkPicker(false);
-                setReplacingLinkTargetId(null);
-              }}
-              style={{
-                border: 'none',
-                background: 'transparent',
-                color: 'var(--text-muted)',
-                cursor: 'pointer',
-                fontSize: 15,
-              }}
-            >
-              ×
-            </button>
-          </div>
-          <input
-            autoFocus
-            type="text"
-            value={linkSearch}
-            onChange={(e) => setLinkSearch(e.target.value)}
-            placeholder="搜索待办或便签标题…"
-            style={{
-              padding: '6px 9px',
-              borderRadius: 8,
-              border: '1px solid var(--border)',
-              background: 'var(--bg-input)',
-              color: 'var(--text-primary)',
-              fontSize: 12.5,
-              outline: 'none',
-            }}
-          />
-          <div style={{ maxHeight: 190, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 3 }}>
-            {linkCandidates.length === 0 ? (
-              <div style={{ padding: 12, textAlign: 'center', fontSize: 12, color: 'var(--text-muted)' }}>
-                没有匹配的待办或便签
-              </div>
-            ) : (
-              linkCandidates.map((cand) => (
-                <button
-                  key={`${cand.targetType}-${cand.targetId}`}
-                  type="button"
-                  onClick={() => handleSelectLinkCandidate(cand)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 7,
-                    padding: '6px 8px',
-                    borderRadius: 7,
-                    border: 'none',
-                    background: 'transparent',
-                    color: 'var(--text-primary)',
-                    textAlign: 'left',
-                    fontSize: 12.5,
-                    cursor: 'pointer',
-                  }}
-                >
-                  <span
-                    style={{
-                      fontSize: 10.5,
-                      padding: '1px 6px',
-                      borderRadius: 999,
-                      background: cand.targetType === 'note' ? 'var(--accent-soft)' : 'var(--tag-bg)',
-                      color: cand.targetType === 'note' ? 'var(--accent-soft-text)' : 'var(--tag-text)',
-                      flexShrink: 0,
-                    }}
+          <div className="flex flex-col gap-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <PopoverTitle className="text-xs font-semibold">
+                {replacingLinkTargetId ? '替换 @ 关联内容' : '选择要 @ 关联的待办或便签'}
+              </PopoverTitle>
+              <PopoverClose
+                render={
+                  <Button
+                    aria-label="关闭关联选择器"
+                    size="icon-xs"
+                    variant="ghost"
+                    className="-me-1"
+                  />
+                }
+              >
+                <XIcon aria-hidden="true" />
+              </PopoverClose>
+            </div>
+
+            <InputGroup>
+              <InputGroupAddon align="inline-start">
+                <SearchIcon className="size-3.5" aria-hidden="true" />
+              </InputGroupAddon>
+              <InputGroupInput
+                size="sm"
+                autoFocus
+                type="text"
+                value={linkSearch}
+                onChange={(e) => setLinkSearch(e.target.value)}
+                placeholder="搜索待办或便签标题…"
+              />
+            </InputGroup>
+
+            <div className="-mx-1 flex max-h-48 flex-col gap-0.5 overflow-y-auto px-1">
+              {linkCandidates.length === 0 ? (
+                <div className="py-5 text-center text-muted-foreground text-xs">
+                  没有匹配的待办或便签
+                </div>
+              ) : (
+                linkCandidates.map((cand) => (
+                  <button
+                    key={`${cand.targetType}-${cand.targetId}`}
+                    type="button"
+                    onClick={() => handleSelectLinkCandidate(cand)}
+                    className="flex cursor-pointer items-center gap-2 rounded-md border-none bg-transparent px-2 py-1.5 text-left text-foreground text-xs transition-colors hover:bg-accent"
                   >
-                    {cand.targetType === 'note' ? '便签' : '待办'}
-                  </span>
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {cand.label}
-                  </span>
-                </button>
-              ))
-            )}
+                    {cand.targetType === 'note' ? (
+                      <StickyNoteIcon
+                        className="size-3.5 shrink-0 text-warning"
+                        aria-hidden="true"
+                      />
+                    ) : (
+                      <CheckSquareIcon
+                        className="size-3.5 shrink-0 text-info"
+                        aria-hidden="true"
+                      />
+                    )}
+                    <Badge variant="secondary" size="sm" className="shrink-0">
+                      {cand.targetType === 'note' ? '便签' : '待办'}
+                    </Badge>
+                    <span className="min-w-0 flex-1 truncate">{cand.label}</span>
+                  </button>
+                ))
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        </PopoverPopup>
+      </Popover>
 
       {/* ================================================================= */}
       {/* MODE A: NORMAL STRUCTURED RICH NOTE                               */}
       {/* ================================================================= */}
       {note.kind === 'normal' && (
-        <div
-          style={{
-            flex: 1,
-            minHeight: 0,
-            position: 'relative',
-            display: 'flex',
-            overflow: 'hidden',
-          }}
-        >
-          <div
-            style={{
-              flex: 1,
-              minWidth: 0,
-              overflowY: 'auto',
-              padding: '16px 26px 40px 22px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 10,
-            }}
-          >
-            {visibleBlocks.map(({ block, hidden }) => {
-              if (hidden) return null;
+        <div className="relative flex min-h-0 flex-1 overflow-hidden">
+          <ScrollArea className="flex-1">
+            <div className="flex flex-col gap-2.5 pt-4 pr-7 pb-8 pl-5">
+              {visibleBlocks.map(({ block, hidden }) => {
+                if (hidden) return null;
 
-              if (block.type === 'heading') {
-                const isCollapsed = collapsedHeadings.has(block.id);
-                const fontSize = block.level === 1 ? 19 : block.level === 2 ? 16 : 14.5;
-                return (
-                  <div
-                    key={block.id}
-                    ref={(el) => {
-                      blockRefs.current[block.id] = el;
-                    }}
-                    className="dt-note-heading-row"
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 4,
-                      marginLeft: -18,
-                      marginTop: block.level === 1 ? 4 : 6,
-                    }}
-                  >
-                    <button
-                      type="button"
-                      title={isCollapsed ? '展开此节内容' : '折叠此节内容'}
-                      onClick={() => toggleHeadingCollapse(block.id)}
-                      style={{
-                        width: 18,
-                        height: 22,
-                        border: 'none',
-                        background: 'transparent',
-                        color: isCollapsed ? 'var(--accent)' : 'var(--text-muted)',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        cursor: 'pointer',
-                        padding: 0,
-                        flexShrink: 0,
+                if (block.type === 'heading') {
+                  const isCollapsed = collapsedHeadings.has(block.id);
+                  const headingSizeClass =
+                    block.level === 1
+                      ? 'text-[18px] font-bold tracking-tight mt-0.5'
+                      : block.level === 2
+                        ? 'text-[15px] font-bold mt-1.5'
+                        : 'text-[13.5px] font-semibold mt-1';
+                  return (
+                    <div
+                      key={block.id}
+                      ref={(el) => {
+                        blockRefs.current[block.id] = el;
                       }}
+                      className={cn(
+                        'dt-note-heading-row -ml-4.5 flex items-center gap-1',
+                        block.level === 1 ? 'mt-0.5' : 'mt-1.5',
+                      )}
                     >
-                      {isCollapsed ? <ChevronRightIcon size={13} /> : <ChevronDownIcon size={13} />}
-                    </button>
-                    <input
-                      type="text"
-                      value={block.text}
-                      onFocus={() => {
-                        setFocusedBlockId(block.id);
-                        setActiveHeadingId(block.id);
-                      }}
-                      onChange={(e) => updateBlockText(block.id, e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-                          e.preventDefault();
-                          insertBlockAfter(block.id, {
-                            id: `blk_${Date.now().toString(36)}`,
-                            type: 'paragraph',
-                            text: '',
-                          });
-                        } else if (e.key === 'Backspace' && block.text === '') {
-                          e.preventDefault();
-                          removeBlock(block.id);
-                        }
-                      }}
-                      placeholder={`标题 ${block.level}`}
-                      style={{
-                        flex: 1,
-                        minWidth: 0,
-                        border: 'none',
-                        outline: 'none',
-                        background: 'transparent',
-                        color: 'var(--text-primary)',
-                        fontSize,
-                        fontWeight: 700,
-                        lineHeight: 1.4,
-                        padding: 0,
-                      }}
-                    />
-                    {isCollapsed && (
-                      <span
-                        style={{
-                          fontSize: 11,
-                          padding: '0 6px',
-                          borderRadius: 999,
-                          background: 'var(--accent-soft)',
-                          color: 'var(--accent-soft-text)',
-                        }}
+                      <button
+                        type="button"
+                        aria-label={isCollapsed ? '展开此节内容' : '折叠此节内容'}
+                        title={isCollapsed ? '展开此节内容' : '折叠此节内容'}
+                        onClick={() => toggleHeadingCollapse(block.id)}
+                        className={cn(
+                          'inline-flex size-4.5 shrink-0 cursor-pointer items-center justify-center rounded border-none bg-transparent p-0 transition-colors hover:bg-accent',
+                          isCollapsed ? 'text-dt-accent' : 'text-muted-foreground/75 hover:text-foreground',
+                        )}
                       >
-                        已折叠
-                      </span>
+                        {isCollapsed ? (
+                          <ChevronRightIcon className="size-3.5" aria-hidden="true" />
+                        ) : (
+                          <ChevronDownIcon className="size-3.5" aria-hidden="true" />
+                        )}
+                      </button>
+
+                      <input
+                        type="text"
+                        value={block.text}
+                        onFocus={() => {
+                          markBlockFocused(block.id);
+                          setActiveHeadingId(block.id);
+                        }}
+                        onChange={(e) => updateBlockText(block.id, e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                            e.preventDefault();
+                            insertBlockAfter(block.id, {
+                              id: `blk_${Date.now().toString(36)}`,
+                              type: 'paragraph',
+                              text: '',
+                            });
+                          } else if (e.key === 'Backspace' && block.text === '') {
+                            e.preventDefault();
+                            removeBlock(block.id);
+                          }
+                        }}
+                        placeholder={`标题 ${block.level}`}
+                        className={cn(
+                          'min-w-0 flex-1 border-none bg-transparent p-0 leading-[1.35] text-foreground outline-none placeholder:text-muted-foreground/50',
+                          headingSizeClass,
+                        )}
+                      />
+
+                      {isCollapsed && (
+                        <Badge variant="secondary" size="sm" className="shrink-0">
+                          已折叠
+                        </Badge>
+                      )}
+                    </div>
+                  );
+                }
+
+                if (block.type === 'table') {
+                  const headerRow = block.rows[0] ?? [];
+                  const bodyRows = block.rows.slice(1);
+                  const colCount = headerRow.length;
+                  const dataRowCount = bodyRows.length;
+                  const colWidths = computeTableColumnWidths(block.rows);
+
+                  return (
+                    <CardFrame key={block.id} className="my-1">
+                      <CardFrameHeader className="items-center gap-x-2 border-b border-border/70 px-3 py-2">
+                        <CardFrameTitle className="flex min-w-0 items-center gap-1.5 font-medium text-muted-foreground text-xs">
+                          <TableIcon
+                            className="size-3.5 shrink-0 opacity-75"
+                            aria-hidden="true"
+                          />
+                          <span className="truncate tabular-nums">
+                            表格 · {colCount} 列 × {dataRowCount} 行
+                          </span>
+                        </CardFrameTitle>
+
+                        <CardFrameAction className="flex items-center gap-1">
+                          <Button
+                            size="xs"
+                            variant="outline"
+                            onClick={() => mutateTable(block.id, 'addRow')}
+                            className="h-5.5 px-1.5 text-[11px]"
+                          >
+                            + 行
+                          </Button>
+                          <Button
+                            size="xs"
+                            variant="outline"
+                            onClick={() => mutateTable(block.id, 'addCol')}
+                            className="h-5.5 px-1.5 text-[11px]"
+                          >
+                            + 列
+                          </Button>
+                          <Menu>
+                            <MenuTrigger
+                              render={
+                                <Button
+                                  aria-label="表格更多操作"
+                                  size="icon-xs"
+                                  variant="ghost"
+                                  className="size-5.5 text-muted-foreground hover:text-foreground"
+                                />
+                              }
+                            >
+                              <EllipsisIcon className="size-3.5" aria-hidden="true" />
+                            </MenuTrigger>
+                            <MenuPopup align="end" sideOffset={4}>
+                              <MenuItem
+                                disabled={block.rows.length <= 2}
+                                onClick={() => mutateTable(block.id, 'delRow')}
+                              >
+                                <Rows3Icon aria-hidden="true" />
+                                <span>删除末行 (- 行)</span>
+                              </MenuItem>
+                              <MenuItem
+                                disabled={colCount <= 2}
+                                onClick={() => mutateTable(block.id, 'delCol')}
+                              >
+                                <Columns3Icon aria-hidden="true" />
+                                <span>删除末列 (- 列)</span>
+                              </MenuItem>
+                              <MenuSeparator />
+                              <MenuItem
+                                variant="destructive"
+                                onClick={() => removeBlock(block.id)}
+                              >
+                                <Trash2Icon aria-hidden="true" />
+                                <span>删除表格</span>
+                              </MenuItem>
+                            </MenuPopup>
+                          </Menu>
+                        </CardFrameAction>
+                      </CardFrameHeader>
+
+                      <Table
+                        variant="card"
+                        className={cn(
+                          'w-full table-fixed text-xs',
+                          colCount > 4 && 'min-w-[440px]',
+                        )}
+                      >
+                        <colgroup>
+                          {colWidths.map((pct, cIdx) => (
+                            <col key={cIdx} style={{ width: `${pct}%` }} />
+                          ))}
+                        </colgroup>
+                        <TableHeader>
+                          <TableRow className="border-b-0">
+                            {headerRow.map((cell, cIdx) => (
+                              <TableHead
+                                key={cIdx}
+                                className="h-auto whitespace-normal border-r border-border/50 px-2.5 py-2 align-top font-medium text-muted-foreground text-xs last:border-r-0"
+                              >
+                                <CellAutoTextarea
+                                  value={cell}
+                                  placeholder={`列 ${cIdx + 1}`}
+                                  onFocus={() => markBlockFocused(block.id)}
+                                  onChange={(val) => updateTableCell(block.id, 0, cIdx, val)}
+                                  className="font-medium text-muted-foreground"
+                                />
+                              </TableHead>
+                            ))}
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {bodyRows.map((row, bodyIdx) => {
+                            const rIdx = bodyIdx + 1;
+                            return (
+                              <TableRow key={rIdx}>
+                                {row.map((cell, cIdx) => (
+                                  <TableCell
+                                    key={cIdx}
+                                    className="whitespace-normal border-r border-border/50 px-2.5 py-2 align-top last:border-r-0"
+                                  >
+                                    <CellAutoTextarea
+                                      value={cell}
+                                      placeholder="—"
+                                      onFocus={() => markBlockFocused(block.id)}
+                                      onChange={(val) =>
+                                        updateTableCell(block.id, rIdx, cIdx, val)
+                                      }
+                                      className={
+                                        cIdx === 0
+                                          ? 'font-semibold text-foreground'
+                                          : 'text-foreground/90'
+                                      }
+                                    />
+                                  </TableCell>
+                                ))}
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </CardFrame>
+                  );
+                }
+
+                // Paragraph / list / quote / code block
+                const isEditingBlock =
+                  focusedBlockId === block.id || block.text.trim().length === 0;
+
+                return (
+                  <div key={block.id}>
+                    {isEditingBlock ? (
+                      <AutoTextarea
+                        value={block.text}
+                        autoFocus={focusedBlockId === block.id}
+                        onFocus={() => markBlockFocused(block.id)}
+                        onBlur={() => {
+                          if (focusedBlockId === block.id) {
+                            setFocusedBlockId(null);
+                          }
+                        }}
+                        onChange={(val) => updateBlockText(block.id, val)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Backspace' && block.text === '' && blocks.length > 1) {
+                            e.preventDefault();
+                            removeBlock(block.id);
+                          } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                            e.preventDefault();
+                            insertBlockAfter(block.id, {
+                              id: `blk_${Date.now().toString(36)}`,
+                              type: 'paragraph',
+                              text: '',
+                            });
+                          }
+                        }}
+                        placeholder="输入正文，输入 # 创建标题，输入 @ 关联待办或便签…"
+                      />
+                    ) : (
+                      <RichParagraphDisplay
+                        text={block.text}
+                        onActivate={() => markBlockFocused(block.id)}
+                      />
                     )}
                   </div>
                 );
-              }
+              })}
 
-              if (block.type === 'table') {
-                return (
-                  <div
-                    key={block.id}
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 4,
-                      margin: '4px 0',
-                    }}
-                  >
-                    <div style={{ overflowX: 'auto' }}>
-                      <table
-                        style={{
-                          width: '100%',
-                          borderCollapse: 'collapse',
-                          border: '1px solid var(--border-strong)',
-                          borderRadius: 6,
-                          fontSize: 'calc(var(--font-body-size) - 1px)',
-                        }}
-                      >
-                        <tbody>
-                          {block.rows.map((row, rIdx) => (
-                            <tr
-                              key={rIdx}
-                              style={{
-                                background: rIdx === 0 ? 'var(--bg-header)' : 'var(--bg-surface)',
-                              }}
-                            >
-                              {row.map((cell, cIdx) => (
-                                <td
-                                  key={cIdx}
-                                  style={{
-                                    border: '1px solid var(--border)',
-                                    padding: '5px 8px',
-                                    fontWeight: rIdx === 0 ? 600 : 400,
-                                  }}
-                                >
-                                  <input
-                                    type="text"
-                                    value={cell}
-                                    onFocus={() => setFocusedBlockId(block.id)}
-                                    onChange={(e) =>
-                                      updateTableCell(block.id, rIdx, cIdx, e.target.value)
-                                    }
-                                    style={{
-                                      width: '100%',
-                                      minWidth: 48,
-                                      border: 'none',
-                                      outline: 'none',
-                                      background: 'transparent',
-                                      color: 'var(--text-primary)',
-                                      fontWeight: rIdx === 0 ? 600 : 400,
-                                      fontSize: 'inherit',
-                                    }}
-                                  />
-                                </td>
-                              ))}
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
-                      <button
-                        type="button"
-                        onClick={() => mutateTable(block.id, 'addRow')}
-                        style={{
-                          padding: '2px 7px',
-                          borderRadius: 6,
-                          border: '1px solid var(--border)',
-                          background: 'var(--bg-surface)',
-                          color: 'var(--text-secondary)',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        + 行
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => mutateTable(block.id, 'addCol')}
-                        style={{
-                          padding: '2px 7px',
-                          borderRadius: 6,
-                          border: '1px solid var(--border)',
-                          background: 'var(--bg-surface)',
-                          color: 'var(--text-secondary)',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        + 列
-                      </button>
-                      {block.rows.length > 2 && (
-                        <button
-                          type="button"
-                          onClick={() => mutateTable(block.id, 'delRow')}
-                          style={{
-                            padding: '2px 7px',
-                            borderRadius: 6,
-                            border: '1px solid var(--border)',
-                            background: 'transparent',
-                            color: 'var(--text-muted)',
-                            cursor: 'pointer',
-                          }}
-                        >
-                          - 行
-                        </button>
-                      )}
-                      {(block.rows[0]?.length ?? 0) > 2 && (
-                        <button
-                          type="button"
-                          onClick={() => mutateTable(block.id, 'delCol')}
-                          style={{
-                            padding: '2px 7px',
-                            borderRadius: 6,
-                            border: '1px solid var(--border)',
-                            background: 'transparent',
-                            color: 'var(--text-muted)',
-                            cursor: 'pointer',
-                          }}
-                        >
-                          - 列
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => removeBlock(block.id)}
-                        style={{
-                          marginLeft: 'auto',
-                          padding: '2px 7px',
-                          borderRadius: 6,
-                          border: 'none',
-                          background: 'transparent',
-                          color: 'var(--danger)',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        删除表格
-                      </button>
-                    </div>
-                  </div>
-                );
-              }
+              {/* Add new paragraph subtle trigger */}
+              <div className="pt-1">
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  onClick={() =>
+                    insertBlockAfter(blocks[blocks.length - 1]?.id ?? null, {
+                      id: `blk_${Date.now().toString(36)}`,
+                      type: 'paragraph',
+                      text: '',
+                    })
+                  }
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <PlusIcon className="size-3" aria-hidden="true" />
+                  <span>新段落</span>
+                </Button>
+              </div>
 
-              // Paragraph / list / quote / code block
-              return (
-                <div key={block.id}>
-                  <AutoTextarea
-                    value={block.text}
-                    onFocus={() => setFocusedBlockId(block.id)}
-                    onChange={(val) => updateBlockText(block.id, val)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Backspace' && block.text === '' && blocks.length > 1) {
-                        e.preventDefault();
-                        removeBlock(block.id);
-                      } else if (
-                        e.key === 'Enter' &&
-                        (e.ctrlKey || e.metaKey)
-                      ) {
-                        e.preventDefault();
-                        insertBlockAfter(block.id, {
-                          id: `blk_${Date.now().toString(36)}`,
-                          type: 'paragraph',
-                          text: '',
-                        });
-                      }
-                    }}
-                    placeholder="输入正文，输入 # 创建标题，输入 @ 关联待办或便签…"
-                    style={{
-                      color: 'var(--text-primary)',
-                      fontSize: 'var(--font-body-size)',
-                      lineHeight: 1.7,
-                    }}
-                  />
+              {/* File & Audio Attachment Chips */}
+              {noteOtherAttachments.length > 0 && (
+                <div className="mt-1 flex flex-wrap gap-2">
+                  {noteOtherAttachments.map((att) => (
+                    <AttachmentMedia
+                      key={att.id}
+                      att={att}
+                      onRemove={() => handleRemoveNoteAttachment(att.id)}
+                    />
+                  ))}
                 </div>
-              );
-            })}
+              )}
 
-            {/* Add new paragraph click-zone */}
-            <button
-              type="button"
-              onClick={() =>
-                insertBlockAfter(blocks[blocks.length - 1]?.id ?? null, {
-                  id: `blk_${Date.now().toString(36)}`,
-                  type: 'paragraph',
-                  text: '',
-                })
-              }
-              style={{
-                alignSelf: 'flex-start',
-                padding: '3px 8px',
-                borderRadius: 6,
-                border: '1px dashed var(--border)',
-                background: 'transparent',
-                color: 'var(--text-muted)',
-                fontSize: 11.5,
-                cursor: 'pointer',
-                marginTop: 4,
-              }}
-            >
-              + 新段落
-            </button>
+              {/* Inline Images */}
+              {noteImages.length > 0 && (
+                <div className="mt-1 flex flex-wrap gap-2.5">
+                  {noteImages.map((img) => (
+                    <AttachmentMedia
+                      key={img.id}
+                      att={img}
+                      onRemove={() => handleRemoveNoteAttachment(img.id)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          </ScrollArea>
 
-            {/* File & Audio Attachment Chips */}
-            {noteOtherAttachments.length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 6 }}>
-                {noteOtherAttachments.map((att) => (
-                  <AttachmentMedia
-                    key={att.id}
-                    att={att}
-                    onRemove={() => handleRemoveNoteAttachment(att.id)}
-                  />
-                ))}
-              </div>
-            )}
-
-            {/* Inline Images */}
-            {noteImages.length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 6 }}>
-                {noteImages.map((img) => (
-                  <AttachmentMedia
-                    key={img.id}
-                    att={img}
-                    onRemove={() => handleRemoveNoteAttachment(img.id)}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Floating Right-Side Document Outline */}
+          {/* Floating Right-Side Document Outline (Notion-style ticks + hover popover) */}
           {showOutline && headings.length > 0 && (
             <div
               onMouseEnter={() => setOutlineHover(true)}
               onMouseLeave={() => setOutlineHover(false)}
-              style={{
-                position: 'absolute',
-                top: 18,
-                right: 10,
-                zIndex: 20,
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'flex-end',
-              }}
+              className="absolute top-4 right-2.5 z-20 flex flex-col items-end"
             >
-              {/* Minimal outline indicator bars */}
-              <div
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'flex-end',
-                  gap: 6,
-                  padding: '6px 4px',
-                  cursor: 'pointer',
-                }}
-              >
+              <div className="flex cursor-pointer flex-col items-end gap-1.5 px-1 py-1.5">
                 {headings.map((h, i) => {
                   const active = (activeHeadingId ?? headings[0]?.id) === h.id;
-                  const width = h.level === 1 ? 18 : h.level === 2 ? 13 : 9;
+                  const widthClass =
+                    h.level === 1 ? 'w-3.5' : h.level === 2 ? 'w-2.5' : 'w-2';
                   return (
                     <button
                       key={`${h.id}-${i}`}
                       type="button"
+                      aria-label={h.text || '未命名标题'}
                       title={h.text}
                       onClick={() => scrollToHeading(h.id)}
-                      style={{
-                        width,
-                        height: 3,
-                        borderRadius: 999,
-                        border: 'none',
-                        padding: 0,
-                        background: active ? 'var(--accent)' : 'var(--border-strong)',
-                        cursor: 'pointer',
-                        transition: 'background 140ms ease, width 140ms ease',
-                      }}
+                      className={cn(
+                        'h-[2.5px] cursor-pointer rounded-full border-none p-0 transition-all duration-150',
+                        widthClass,
+                        active
+                          ? 'bg-foreground/80'
+                          : 'bg-foreground/15 hover:bg-foreground/40',
+                      )}
                     />
                   );
                 })}
               </div>
 
-              {/* Expanded Outline Popover on Hover */}
               {outlineHover && (
-                <div
-                  style={{
-                    marginTop: 4,
-                    width: 176,
-                    maxHeight: 260,
-                    overflowY: 'auto',
-                    padding: 8,
-                    borderRadius: 10,
-                    background: 'var(--bg-popover)',
-                    border: '1px solid var(--border)',
-                    boxShadow: 'var(--shadow-popover)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 3,
-                  }}
-                >
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', padding: '0 4px 4px' }}>
+                <div className="mt-1 flex max-h-64 w-46 flex-col gap-0.5 overflow-y-auto rounded-lg border bg-popover p-1.5 text-popover-foreground shadow-lg/5">
+                  <div className="px-2 py-1 font-medium text-[11px] text-muted-foreground">
                     文档大纲
                   </div>
                   {headings.map((h) => {
                     const active = (activeHeadingId ?? headings[0]?.id) === h.id;
+                    const indentClass =
+                      h.level === 1 ? 'pl-2' : h.level === 2 ? 'pl-4' : 'pl-6';
                     return (
                       <button
                         key={h.id}
                         type="button"
                         onClick={() => scrollToHeading(h.id)}
-                        style={{
-                          textAlign: 'left',
-                          padding: `4px 6px 4px ${(h.level - 1) * 10 + 6}px`,
-                          borderRadius: 6,
-                          border: 'none',
-                          background: active ? 'var(--accent-soft)' : 'transparent',
-                          color: active ? 'var(--accent-soft-text)' : 'var(--text-secondary)',
-                          fontWeight: active ? 600 : 400,
-                          fontSize: 12,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                          cursor: 'pointer',
-                        }}
+                        className={cn(
+                          'cursor-pointer truncate rounded-md border-none py-1 pr-2 text-left text-xs transition-colors',
+                          indentClass,
+                          active
+                            ? 'bg-accent font-semibold text-foreground'
+                            : 'bg-transparent text-muted-foreground hover:bg-accent/70 hover:text-foreground',
+                        )}
                       >
                         {h.text || '未命名标题'}
                       </button>
@@ -2136,397 +2240,234 @@ export const NoteView: React.FC<NoteViewProps> = ({ noteId, standalone = false }
       {/* MODE B: TIMELINE NOTE (时间轴便签)                                 */}
       {/* ================================================================= */}
       {note.kind === 'timeline' && (
-        <div
-          style={{
-            flex: 1,
-            minHeight: 0,
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden',
-          }}
-        >
-          {/* Quick Composer */}
-          <div
-            style={{
-              padding: '10px 14px',
-              borderBottom: '1px solid var(--border)',
-              background: 'var(--bg-surface)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 8,
-              flexShrink: 0,
-            }}
-          >
-            <textarea
-              rows={2}
-              value={timelineDraft}
-              onChange={(e) => setTimelineDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                  e.preventDefault();
-                  handleAddTimelineEntry();
-                }
-              }}
-              placeholder="随手记一条进展、灵感或会议要点… (Ctrl+Enter 记录)"
-              style={{
-                width: '100%',
-                boxSizing: 'border-box',
-                padding: '7px 10px',
-                borderRadius: 9,
-                border: '1px solid var(--border)',
-                background: 'var(--bg-input)',
-                color: 'var(--text-primary)',
-                fontSize: 'var(--font-body-size)',
-                fontFamily: 'inherit',
-                resize: 'vertical',
-                outline: 'none',
-              }}
-            />
-
-            {timelineAttachments.length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {timelineAttachments.map((att) => (
-                  <AttachmentMedia
-                    key={att.id}
-                    att={att}
-                    onRemove={() =>
-                      setTimelineAttachments((prev) => prev.filter((a) => a.id !== att.id))
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          {/* Quick Composer inside concentric Frame */}
+          <div className="shrink-0 border-b bg-background px-3.5 py-2.5">
+            <Frame className="rounded-xl p-1">
+              <FramePanel className="flex flex-col gap-2 rounded-lg p-2.5">
+                <Textarea
+                  size="sm"
+                  value={timelineDraft}
+                  onChange={(e) => setTimelineDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                      e.preventDefault();
+                      handleAddTimelineEntry();
                     }
-                  />
-                ))}
-              </div>
-            )}
-
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <button
-                  type="button"
-                  onClick={() => timelineFileRef.current?.click()}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 4,
-                    padding: '4px 8px',
-                    borderRadius: 7,
-                    border: '1px solid var(--border)',
-                    background: 'var(--bg-panel)',
-                    color: 'var(--text-secondary)',
-                    fontSize: 12,
-                    cursor: 'pointer',
                   }}
-                >
-                  <ImageIcon size={13} />
-                  <span>图片 / 文件 / 音频</span>
-                </button>
-              </div>
-              <button
-                type="button"
-                onClick={handleAddTimelineEntry}
-                disabled={!timelineDraft.trim() && timelineAttachments.length === 0}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 5,
-                  padding: '5px 12px',
-                  borderRadius: 8,
-                  border: 'none',
-                  background: 'var(--accent)',
-                  color: 'var(--accent-text)',
-                  fontSize: 12.5,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  opacity: !timelineDraft.trim() && timelineAttachments.length === 0 ? 0.5 : 1,
-                }}
-              >
-                <SendIcon size={13} />
-                <span>记录</span>
-              </button>
-            </div>
+                  placeholder="随手记一条进展、灵感或会议要点… (Ctrl+Enter 记录)"
+                  className="border-none bg-transparent shadow-none ring-0 before:hidden [&_[data-slot=textarea]]:min-h-12 [&_[data-slot=textarea]]:px-1 [&_[data-slot=textarea]]:py-0.5 [&_[data-slot=textarea]]:text-[length:var(--font-body-size)]"
+                />
+
+                {timelineAttachments.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {timelineAttachments.map((att) => (
+                      <AttachmentMedia
+                        key={att.id}
+                        att={att}
+                        onRemove={() =>
+                          setTimelineAttachments((prev) =>
+                            prev.filter((a) => a.id !== att.id),
+                          )
+                        }
+                      />
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between gap-2 border-t pt-2">
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    onClick={() => timelineFileRef.current?.click()}
+                  >
+                    <ImageIcon className="size-3.5" aria-hidden="true" />
+                    <span>图片 / 文件 / 音频</span>
+                  </Button>
+
+                  <Button
+                    size="xs"
+                    variant="default"
+                    onClick={handleAddTimelineEntry}
+                    disabled={!timelineDraft.trim() && timelineAttachments.length === 0}
+                  >
+                    <SendIcon className="size-3" aria-hidden="true" />
+                    <span>记录</span>
+                  </Button>
+                </div>
+              </FramePanel>
+            </Frame>
           </div>
 
           {/* Chronological Timeline Stream */}
-          <div
-            style={{
-              flex: 1,
-              minHeight: 0,
-              overflowY: 'auto',
-              padding: '14px 16px 36px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 12,
-            }}
-          >
-            {note.timelineEntries.length === 0 ? (
-              <div
-                style={{
-                  padding: '36px 16px',
-                  textAlign: 'center',
-                  color: 'var(--text-muted)',
-                  fontSize: 13,
-                }}
-              >
-                还没有时间轴记录，在上方写下第一条吧。
-              </div>
-            ) : (
-              note.timelineEntries.map((entry) => {
-                const linkedTodo = entry.linkedTodoId
-                  ? activeTodos.find((t) => t.id === entry.linkedTodoId) ?? null
-                  : null;
-                const isEditing = editingEntryId === entry.id;
+          <ScrollArea className="flex-1">
+            <div className="flex flex-col gap-3 px-4 pt-3.5 pb-6">
+              {note.timelineEntries.length === 0 ? (
+                <Empty className="py-12">
+                  <EmptyMedia variant="icon">
+                    <ClockIcon aria-hidden="true" />
+                  </EmptyMedia>
+                  <EmptyHeader>
+                    <EmptyTitle className="text-base">暂无时间轴记录</EmptyTitle>
+                    <EmptyDescription>
+                      在上方输入框随手写下第一条进展、灵感或会议要点吧。
+                    </EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
+              ) : (
+                note.timelineEntries.map((entry, idx) => {
+                  const linkedTodo = entry.linkedTodoId
+                    ? activeTodos.find((t) => t.id === entry.linkedTodoId) ?? null
+                    : null;
+                  const isEditing = editingEntryId === entry.id;
+                  const isLast = idx === note.timelineEntries.length - 1;
 
-                return (
-                  <div
-                    key={entry.id}
-                    style={{
-                      display: 'flex',
-                      gap: 10,
-                      position: 'relative',
-                    }}
-                  >
-                    {/* Left timeline dot + line */}
-                    <div
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        paddingTop: 5,
-                        flexShrink: 0,
-                      }}
-                    >
-                      <span
-                        style={{
-                          width: 8,
-                          height: 8,
-                          borderRadius: '50%',
-                          background: 'var(--accent)',
-                        }}
-                      />
-                      <span
-                        style={{
-                          flex: 1,
-                          width: 1.5,
-                          background: 'var(--border)',
-                          marginTop: 4,
-                        }}
-                      />
-                    </div>
-
-                    {/* Entry Card */}
-                    <div
-                      style={{
-                        flex: 1,
-                        minWidth: 0,
-                        padding: '9px 12px',
-                        borderRadius: 10,
-                        background: 'var(--bg-card)',
-                        border: '1px solid var(--border)',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: 6,
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          gap: 8,
-                          flexWrap: 'wrap',
-                        }}
-                      >
-                        <span
-                          style={{
-                            fontSize: 11.5,
-                            color: 'var(--text-muted)',
-                            fontVariantNumeric: 'tabular-nums',
-                          }}
-                        >
-                          {formatTimestampYMDHM(entry.createdAt)}
-                        </span>
-
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                          {linkedTodo ? (
-                            <button
-                              type="button"
-                              onClick={() => setEditingTodoId(linkedTodo.id)}
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: 4,
-                                padding: '2px 8px',
-                                borderRadius: 999,
-                                border: '1px solid var(--accent-border)',
-                                background: 'var(--accent-soft)',
-                                color: 'var(--accent-soft-text)',
-                                fontSize: 11,
-                                cursor: 'pointer',
-                              }}
-                            >
-                              <CheckIcon size={10} />
-                              <span>已关联待办</span>
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => convertTimelineEntryToTodo(note.id, entry.id)}
-                              style={{
-                                padding: '2px 8px',
-                                borderRadius: 999,
-                                border: '1px solid var(--border)',
-                                background: 'var(--bg-surface)',
-                                color: 'var(--text-secondary)',
-                                fontSize: 11,
-                                cursor: 'pointer',
-                              }}
-                            >
-                              转为待办
-                            </button>
-                          )}
-
-                          <button
-                            type="button"
-                            title="编辑记录"
-                            onClick={() => {
-                              setEditingEntryId(entry.id);
-                              setEditingEntryText(entry.content);
-                            }}
-                            style={{
-                              width: 22,
-                              height: 22,
-                              border: 'none',
-                              borderRadius: 5,
-                              background: 'transparent',
-                              color: 'var(--text-muted)',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              cursor: 'pointer',
-                            }}
-                          >
-                            <EditIcon size={12} />
-                          </button>
-                          <button
-                            type="button"
-                            title="删除记录"
-                            onClick={() => deleteTimelineEntry(note.id, entry.id)}
-                            style={{
-                              width: 22,
-                              height: 22,
-                              border: 'none',
-                              borderRadius: 5,
-                              background: 'transparent',
-                              color: 'var(--text-muted)',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              cursor: 'pointer',
-                            }}
-                          >
-                            <TrashIcon size={12} />
-                          </button>
-                        </div>
+                  return (
+                    <div key={entry.id} className="relative flex gap-3">
+                      {/* Left timeline dot + connector */}
+                      <div className="flex shrink-0 flex-col items-center pt-2">
+                        <span className="size-2 rounded-full bg-dt-accent ring-3 ring-background" />
+                        {!isLast && (
+                          <span className="mt-1.5 w-px flex-1 bg-border" />
+                        )}
                       </div>
 
-                      {isEditing ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                          <textarea
-                            rows={2}
-                            autoFocus
-                            value={editingEntryText}
-                            onChange={(e) => setEditingEntryText(e.target.value)}
-                            style={{
-                              width: '100%',
-                              boxSizing: 'border-box',
-                              padding: '6px 8px',
-                              borderRadius: 7,
-                              border: '1px solid var(--accent-border)',
-                              background: 'var(--bg-input)',
-                              color: 'var(--text-primary)',
-                              fontSize: 'var(--font-body-size)',
-                              fontFamily: 'inherit',
-                            }}
-                          />
-                          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                            <button
-                              type="button"
-                              onClick={() => setEditingEntryId(null)}
-                              style={{
-                                padding: '3px 9px',
-                                borderRadius: 6,
-                                border: '1px solid var(--border)',
-                                background: 'transparent',
-                                color: 'var(--text-secondary)',
-                                fontSize: 12,
-                                cursor: 'pointer',
-                              }}
-                            >
-                              取消
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleSaveEntryEdit(entry)}
-                              style={{
-                                padding: '3px 9px',
-                                borderRadius: 6,
-                                border: 'none',
-                                background: 'var(--accent)',
-                                color: 'var(--accent-text)',
-                                fontSize: 12,
-                                cursor: 'pointer',
-                              }}
-                            >
-                              保存
-                            </button>
+                      {/* Concentric Entry Card */}
+                      <Card className="min-w-0 flex-1 gap-2 rounded-xl p-3 before:rounded-[calc(var(--radius-xl)-1px)]">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <Badge
+                            variant="secondary"
+                            size="sm"
+                            className="font-normal text-muted-foreground tabular-nums"
+                          >
+                            {formatTimestampYMDHM(entry.createdAt)}
+                          </Badge>
+
+                          <div className="flex items-center gap-1">
+                            {linkedTodo ? (
+                              <Badge
+                                variant="outline"
+                                size="default"
+                                render={
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingTodoId(linkedTodo.id)}
+                                  />
+                                }
+                                className="border-dt-accent-border bg-dt-accent-soft text-dt-accent-soft-text"
+                              >
+                                <CheckIcon className="size-3" aria-hidden="true" />
+                                <span>已关联待办</span>
+                              </Badge>
+                            ) : (
+                              <Button
+                                size="xs"
+                                variant="outline"
+                                onClick={() => convertTimelineEntryToTodo(note.id, entry.id)}
+                                className="h-5.5 px-2 text-[11px]"
+                              >
+                                转为待办
+                              </Button>
+                            )}
+
+                            <Tooltip>
+                              <TooltipTrigger
+                                render={
+                                  <Button
+                                    aria-label="编辑记录"
+                                    size="icon-xs"
+                                    variant="ghost"
+                                    onClick={() => {
+                                      setEditingEntryId(entry.id);
+                                      setEditingEntryText(entry.content);
+                                    }}
+                                    className="size-6 text-muted-foreground hover:text-foreground"
+                                  />
+                                }
+                              >
+                                <PencilIcon className="size-3" aria-hidden="true" />
+                              </TooltipTrigger>
+                              <TooltipPopup>编辑记录</TooltipPopup>
+                            </Tooltip>
+
+                            <Tooltip>
+                              <TooltipTrigger
+                                render={
+                                  <Button
+                                    aria-label="删除记录"
+                                    size="icon-xs"
+                                    variant="ghost"
+                                    onClick={() => deleteTimelineEntry(note.id, entry.id)}
+                                    className="size-6 text-muted-foreground hover:text-destructive-foreground"
+                                  />
+                                }
+                              >
+                                <Trash2Icon className="size-3" aria-hidden="true" />
+                              </TooltipTrigger>
+                              <TooltipPopup>删除记录</TooltipPopup>
+                            </Tooltip>
                           </div>
                         </div>
-                      ) : (
-                        <div
-                          style={{
-                            fontSize: 'var(--font-body-size)',
-                            lineHeight: 1.65,
-                            whiteSpace: 'pre-wrap',
-                            wordBreak: 'break-word',
-                          }}
-                        >
-                          {entry.content}
-                        </div>
-                      )}
 
-                      {entry.attachments.length > 0 && (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 2 }}>
-                          {entry.attachments.map((att) => (
-                            <AttachmentMedia key={att.id} att={att} />
-                          ))}
-                        </div>
-                      )}
+                        {isEditing ? (
+                          <div className="flex flex-col gap-2">
+                            <Textarea
+                              size="sm"
+                              autoFocus
+                              value={editingEntryText}
+                              onChange={(e) => setEditingEntryText(e.target.value)}
+                              className="[&_[data-slot=textarea]]:text-[length:var(--font-body-size)]"
+                            />
+                            <div className="flex justify-end gap-1.5">
+                              <Button
+                                size="xs"
+                                variant="ghost"
+                                onClick={() => setEditingEntryId(null)}
+                              >
+                                取消
+                              </Button>
+                              <Button
+                                size="xs"
+                                variant="default"
+                                onClick={() => handleSaveEntryEdit(entry)}
+                              >
+                                保存
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="whitespace-pre-wrap break-words text-[length:var(--font-body-size)] leading-relaxed text-foreground">
+                            {entry.content}
+                          </div>
+                        )}
+
+                        {entry.attachments.length > 0 && (
+                          <div className="mt-0.5 flex flex-wrap gap-1.5">
+                            {entry.attachments.map((att) => (
+                              <AttachmentMedia key={att.id} att={att} />
+                            ))}
+                          </div>
+                        )}
+                      </Card>
                     </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
+                  );
+                })
+              )}
+            </div>
+          </ScrollArea>
         </div>
       )}
 
-      {/* Bottom-right live character counter */}
-      <div
-        style={{
-          position: 'absolute',
-          right: 14,
-          bottom: 8,
-          fontSize: 11.5,
-          color: 'var(--text-muted)',
-          background: 'var(--bg-panel)',
-          padding: '2px 6px',
-          borderRadius: 6,
-          pointerEvents: 'none',
-          fontVariantNumeric: 'tabular-nums',
-        }}
-      >
-        {note.kind === 'timeline'
-          ? `${note.timelineEntries.length} 条 · ${totalCharCount} 字`
-          : `${totalCharCount} 字`}
-      </div>
+      {/* Subtle Footer Bar */}
+      <footer className="flex h-8 shrink-0 items-center justify-between border-t bg-background px-3.5 text-[11.5px] text-muted-foreground tabular-nums">
+        <span className="truncate">
+          {noteGroup ? noteGroup.name : '未分组'}
+          {note.kind === 'normal'
+            ? ` · ${headings.length} 节大纲`
+            : ` · ${note.timelineEntries.length} 条记录`}
+        </span>
+        <span className="shrink-0">{totalCharCount} 字</span>
+      </footer>
     </div>
   );
 };

@@ -1,52 +1,144 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-sans: var(--font-family, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', ui-sans-serif, system-ui, sans-serif);
+  --font-heading: var(--font-family, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', ui-sans-serif, system-ui, sans-serif);
+  --font-mono: 'Cascadia Mono', 'JetBrains Mono', 'SF Mono', Consolas, ui-monospace, monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-coss-frame-well: var(--coss-frame-well);
+  --color-dt-accent: var(--dt-accent);
+  --color-dt-accent-soft: var(--dt-accent-soft);
+  --color-dt-accent-soft-text: var(--dt-accent-soft-text);
+  --color-dt-accent-border: var(--dt-accent-border);
+}
+
 /* ==========================================================================
-   DeskTag Paper-Craft Design System
-   Harmonized across all 11 original DeskTag themes + Windows/macOS/Android
+   DeskTag × coss ui Design Tokens
+   Default: ink-minimal (pure @coss/style neutral light); dynamic runtime
+   overrides applied by applySkinToDocument() in src/themes/skins.ts
    ========================================================================== */
 
 :root {
-  --bg-panel: #fcfbf7;
-  --bg-header: #f5f2ea;
+  --radius: 0.625rem;
+  --background: var(--color-white);
+  --foreground: var(--color-neutral-800);
+  --card: var(--color-white);
+  --card-foreground: var(--color-neutral-800);
+  --popover: var(--color-white);
+  --popover-foreground: var(--color-neutral-800);
+  --primary: var(--color-neutral-800);
+  --primary-foreground: var(--color-neutral-50);
+  --secondary: --alpha(var(--color-black) / 4%);
+  --secondary-foreground: var(--color-neutral-800);
+  --muted: --alpha(var(--color-black) / 4%);
+  --muted-foreground: color-mix(in srgb, var(--color-neutral-500) 90%, var(--color-black));
+  --accent: --alpha(var(--color-black) / 4%);
+  --accent-foreground: var(--color-neutral-800);
+  --border: --alpha(var(--color-black) / 8%);
+  --input: --alpha(var(--color-black) / 10%);
+  --ring: var(--color-neutral-400);
+  --destructive: var(--color-red-500);
+  --destructive-foreground: var(--color-red-700);
+  --info: var(--color-blue-500);
+  --info-foreground: var(--color-blue-700);
+  --success: var(--color-emerald-500);
+  --success-foreground: var(--color-emerald-700);
+  --warning: var(--color-amber-500);
+  --warning-foreground: var(--color-amber-700);
+  --sidebar: var(--color-neutral-50);
+  --sidebar-foreground: color-mix(in srgb, var(--color-neutral-800) 64%, var(--sidebar));
+  --sidebar-border: --alpha(var(--color-black) / 6%);
+  --sidebar-accent: --alpha(var(--color-black) / 4%);
+  --sidebar-accent-foreground: var(--color-neutral-800);
+  --sidebar-primary: var(--color-neutral-800);
+  --sidebar-primary-foreground: var(--color-neutral-50);
+  --sidebar-ring: var(--color-neutral-400);
+  --coss-frame-well: --alpha(var(--color-black) / 3.2%);
+
+  /* DeskTag brand & domain tokens */
+  --dt-accent: #262626;
+  --dt-accent-hover: #171717;
+  --dt-accent-soft: #f5f5f5;
+  --dt-accent-soft-text: #262626;
+  --dt-accent-border: rgba(0, 0, 0, 0.14);
+  --dt-accent-text: #fafafa;
+
+  /* Legacy DeskTag defaults (synced dynamically by applySkinToDocument) */
+  --bg-panel: #ffffff;
+  --bg-header: #fafafa;
   --bg-surface: #ffffff;
-  --bg-surface-hover: #f4efe7;
+  --bg-surface-hover: #f5f5f5;
   --bg-input: #ffffff;
   --bg-card: #ffffff;
-  --bg-popover: #fffefb;
-  --border: #e2ded2;
-  --border-strong: #cfc9ba;
-  --text-primary: #2c2824;
-  --text-secondary: #625b53;
-  --text-muted: #928b82;
-  --text-completed: #a8a198;
-  --accent: #df6542;
-  --accent-hover: #cb5331;
-  --accent-soft: #f9e6de;
-  --accent-soft-text: #b54524;
-  --accent-border: #e8ad99;
-  --accent-text: #ffffff;
-  --tab-active-bg: #df6542;
-  --tab-active-text: #ffffff;
-  --tab-inactive-bg: #f4ded4;
-  --tab-inactive-text: #724435;
-  --tab-inactive-hover-bg: #edd0c3;
-  --pill-active-bg: #f9e6de;
-  --pill-active-text: #b54524;
-  --priority-high: #d94d4a;
-  --priority-medium: #cf9e36;
-  --priority-low: #4e7e57;
-  --progress-border: #66948a;
-  --progress-fill: rgba(102, 148, 138, 0.24);
-  --progress-text: #3d6960;
-  --tag-bg: #f4ede6;
-  --tag-border: #e4d5c8;
-  --tag-text: #715445;
-  --danger: #d44643;
-  --danger-soft: #fceae9;
-  --success: #4e7e57;
-  --warning: #cf932e;
-  --shadow-panel: 0 8px 28px rgba(44, 38, 30, 0.11);
-  --shadow-popover: 0 14px 38px rgba(44, 38, 30, 0.17);
+  --bg-popover: #ffffff;
+  --border-strong: rgba(0, 0, 0, 0.14);
+  --text-primary: #262626;
+  --text-secondary: #525252;
+  --text-muted: #737373;
+  --text-completed: #a3a3a3;
+  --accent-hover: #171717;
+  --accent-soft: #f5f5f5;
+  --accent-soft-text: #262626;
+  --accent-border: rgba(0, 0, 0, 0.14);
+  --accent-text: #fafafa;
+  --tab-active-bg: #262626;
+  --tab-active-text: #fafafa;
+  --tab-inactive-bg: #f5f5f5;
+  --tab-inactive-text: #525252;
+  --tab-inactive-hover-bg: #ebebeb;
+  --pill-active-bg: #262626;
+  --pill-active-text: #fafafa;
+  --priority-high: #ef4444;
+  --priority-medium: #f59e0b;
+  --priority-low: #10b981;
+  --progress-border: #525252;
+  --progress-fill: rgba(38, 38, 38, 0.14);
+  --progress-text: #404040;
+  --tag-bg: #f5f5f5;
+  --tag-border: rgba(0, 0, 0, 0.08);
+  --tag-text: #525252;
+  --danger: #ef4444;
+  --danger-soft: rgba(239, 68, 68, 0.08);
+  --shadow-panel: 0 8px 28px rgba(0, 0, 0, 0.07);
+  --shadow-popover: 0 14px 38px rgba(0, 0, 0, 0.12);
   --panel-opacity: 1;
-  --font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --font-body-size: 14px;
   --font-ui-size: 13px;
   --radius-panel: 14px;
@@ -54,65 +146,111 @@
   --radius-control: 9px;
 }
 
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
+.dark {
+  --background: color-mix(in srgb, var(--color-neutral-950) 95%, var(--color-white));
+  --foreground: var(--color-neutral-100);
+  --card: color-mix(in srgb, var(--background) 98%, var(--color-white));
+  --card-foreground: var(--color-neutral-100);
+  --popover: color-mix(in srgb, var(--background) 98%, var(--color-white));
+  --popover-foreground: var(--color-neutral-100);
+  --primary: var(--color-neutral-100);
+  --primary-foreground: var(--color-neutral-800);
+  --secondary: --alpha(var(--color-white) / 4%);
+  --secondary-foreground: var(--color-neutral-100);
+  --muted: --alpha(var(--color-white) / 4%);
+  --muted-foreground: color-mix(in srgb, var(--color-neutral-500) 90%, var(--color-white));
+  --accent: --alpha(var(--color-white) / 4%);
+  --accent-foreground: var(--color-neutral-100);
+  --border: --alpha(var(--color-white) / 6%);
+  --input: --alpha(var(--color-white) / 8%);
+  --ring: var(--color-neutral-500);
+  --destructive: color-mix(in srgb, var(--color-red-500) 90%, var(--color-white));
+  --destructive-foreground: var(--color-red-400);
+  --info: var(--color-blue-500);
+  --info-foreground: var(--color-blue-400);
+  --success: var(--color-emerald-500);
+  --success-foreground: var(--color-emerald-400);
+  --warning: var(--color-amber-500);
+  --warning-foreground: var(--color-amber-400);
+  --sidebar: color-mix(in srgb, var(--color-neutral-950) 97%, var(--color-white));
+  --sidebar-foreground: color-mix(in srgb, var(--color-neutral-100) 64%, var(--sidebar));
+  --sidebar-border: --alpha(var(--color-white) / 5%);
+  --sidebar-accent: --alpha(var(--color-white) / 4%);
+  --sidebar-accent-foreground: var(--color-neutral-100);
+  --sidebar-primary: var(--color-neutral-100);
+  --sidebar-primary-foreground: var(--color-neutral-800);
+  --sidebar-ring: var(--color-neutral-400);
+  --coss-frame-well: --alpha(var(--color-white) / 3.2%);
 }
 
-html,
-body,
-#root {
-  margin: 0;
-  padding: 0;
-  width: 100%;
-  height: 100%;
-  background: transparent;
-  color: var(--text-primary);
-  font-family: var(--font-family);
-  font-size: var(--font-body-size);
-  line-height: 1.5;
-  overflow: hidden;
-  user-select: none;
+@layer base {
+  *,
+  *::before,
+  *::after {
+    @apply border-border outline-ring/50;
+    box-sizing: border-box;
+  }
+
+  html,
+  body,
+  #root {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-size: var(--font-body-size);
+    line-height: 1.5;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  body {
+    position: relative;
+  }
+
+  code,
+  kbd,
+  samp,
+  pre {
+    font-family: var(--font-mono);
+  }
+
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']) {
+    cursor: pointer;
+  }
+
+  /* Custom thin scrollbars */
+  ::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--muted-foreground) 32%, transparent);
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--muted-foreground) 52%, transparent);
+  }
 }
 
-button,
-input,
-textarea,
-select {
-  font-family: inherit;
-  color: inherit;
+@keyframes desktag-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.85); }
 }
 
-button {
-  cursor: pointer;
-  border: none;
-  background: transparent;
-  padding: 0;
+@keyframes desktag-pop {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-input,
-textarea,
-select {
-  outline: none;
-}
-
-/* Custom thin scrollbars */
-::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: rgba(130, 120, 110, 0.26);
-  border-radius: 999px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(130, 120, 110, 0.44);
-}
-
+@layer components {
 /* ==========================================================================
    Main Desktop Shell & Protruding Folder-Style Side Tab Rail
    ========================================================================== */
@@ -358,10 +496,7 @@ select {
   background: var(--text-muted);
 }
 
-@keyframes desktag-pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.45; transform: scale(0.85); }
-}
+
 
 .panel-header-actions {
   display: flex;
@@ -389,7 +524,7 @@ select {
 
 .header-icon-btn.active {
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--dt-accent);
 }
 
 .header-icon-btn.danger:hover {
@@ -453,10 +588,7 @@ select {
   animation: desktag-pop 0.14s ease-out;
 }
 
-@keyframes desktag-pop {
-  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
-}
+
 
 .more-menu-popover {
   width: 196px;
@@ -544,7 +676,7 @@ select {
 }
 
 .skin-option-btn.selected {
-  border-color: var(--accent);
+  border-color: var(--dt-accent);
   background: var(--accent-soft);
   color: var(--accent-soft-text);
   font-weight: 600;
@@ -574,7 +706,7 @@ select {
 
 .opacity-slider-row input[type='range'] {
   flex: 1;
-  accent-color: var(--accent);
+  accent-color: var(--dt-accent);
 }
 
 .opacity-value {
@@ -609,7 +741,7 @@ select {
 
 .text-link-btn {
   font-size: 12px;
-  color: var(--accent);
+  color: var(--dt-accent);
   font-weight: 500;
   padding: 2px 5px;
   border-radius: 6px;
@@ -762,7 +894,7 @@ select {
 
 .quadrant-toggle-btn:hover {
   background: var(--accent-soft);
-  border-color: var(--accent);
+  border-color: var(--dt-accent);
 }
 
 /* List selector dropdown inside scope bar */
@@ -809,7 +941,7 @@ select {
 }
 
 .quick-add-box:focus-within {
-  border-color: var(--accent);
+  border-color: var(--dt-accent);
   box-shadow: 0 0 0 2.5px var(--accent-soft);
 }
 
@@ -838,18 +970,18 @@ select {
   align-items: center;
   justify-content: center;
   background: var(--bg-surface-hover);
-  color: var(--accent);
+  color: var(--dt-accent);
   flex-shrink: 0;
   transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 .quick-add-send-btn.ready {
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--dt-accent);
 }
 
 .quick-add-send-btn:hover {
-  background: var(--accent);
+  background: var(--dt-accent);
   color: var(--accent-text);
 }
 
@@ -878,7 +1010,7 @@ select {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  color: var(--accent);
+  color: var(--dt-accent);
   font-weight: 600;
 }
 
@@ -918,7 +1050,7 @@ select {
 }
 
 .nl-keep-raw-label input {
-  accent-color: var(--accent);
+  accent-color: var(--dt-accent);
 }
 
 .nl-btn-group {
@@ -1020,7 +1152,7 @@ select {
 }
 
 .todo-checkbox:hover {
-  border-color: var(--accent);
+  border-color: var(--dt-accent);
 }
 
 .todo-checkbox.checked {
@@ -1161,7 +1293,7 @@ select {
 
 .mini-icon-btn:hover {
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--dt-accent);
 }
 
 .mini-icon-btn.danger:hover {
@@ -1191,7 +1323,7 @@ select {
 
 .reminder-chip:hover {
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--dt-accent);
 }
 
 .tag-pill {
@@ -1345,7 +1477,7 @@ select {
 }
 
 .btn-primary {
-  background: var(--accent);
+  background: var(--dt-accent);
   color: var(--accent-text);
 }
 .btn-primary:hover:not(:disabled) {
@@ -1409,7 +1541,7 @@ select {
 .field-input:focus,
 .field-select:focus,
 .field-textarea:focus {
-  border-color: var(--accent);
+  border-color: var(--dt-accent);
 }
 
 .field-textarea {
@@ -1455,7 +1587,7 @@ select {
 }
 
 .pill-option.selected {
-  border-color: var(--accent);
+  border-color: var(--dt-accent);
   background: var(--accent-soft);
   color: var(--accent-soft-text);
   font-weight: 600;
@@ -1469,7 +1601,7 @@ select {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  color: var(--accent);
+  color: var(--dt-accent);
   font-size: 13px;
   font-weight: 500;
   align-self: flex-start;
@@ -1500,7 +1632,7 @@ select {
   height: 34px;
   border-radius: 9px;
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--dt-accent);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1546,7 +1678,7 @@ select {
 }
 
 .weekday-pill.selected {
-  border-color: var(--accent);
+  border-color: var(--dt-accent);
   background: var(--accent-soft);
   color: var(--accent-soft-text);
   font-weight: 600;
@@ -1733,7 +1865,7 @@ select {
 }
 
 .toggle-switch.on {
-  background: var(--accent);
+  background: var(--dt-accent);
 }
 
 .toggle-switch-knob {
@@ -1809,7 +1941,7 @@ select {
   border-radius: 8px;
   background: var(--bg-surface-hover);
   border: 1px solid var(--border);
-  color: var(--accent);
+  color: var(--dt-accent);
   font-size: 12.5px;
   font-weight: 500;
 }
@@ -1824,7 +1956,7 @@ select {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  color: var(--accent);
+  color: var(--dt-accent);
   text-decoration: underline;
   text-underline-offset: 3px;
   font-size: 13px;
@@ -1856,7 +1988,7 @@ select {
 }
 
 .outline-bar.active {
-  background: var(--accent);
+  background: var(--dt-accent);
 }
 
 .note-footer {
@@ -1892,7 +2024,7 @@ select {
 }
 
 .quadrant-box.drag-over {
-  border-color: var(--accent);
+  border-color: var(--dt-accent);
   box-shadow: 0 0 0 2px var(--accent-soft);
 }
 
@@ -2019,7 +2151,7 @@ select {
 }
 
 .mobile-nav-item.active {
-  color: var(--accent);
+  color: var(--dt-accent);
   font-weight: 600;
 }
 
@@ -2150,7 +2282,7 @@ select {
   border-radius: 7px;
 }
 .dt-btn-primary {
-  background: var(--accent);
+  background: var(--dt-accent);
   color: var(--accent-text);
 }
 .dt-btn-primary:hover:not(:disabled) {
@@ -2185,7 +2317,7 @@ select {
 .dt-link-btn {
   border: none;
   background: transparent;
-  color: var(--accent);
+  color: var(--dt-accent);
   font-size: 11.5px;
   cursor: pointer;
   padding: 0;
@@ -2718,7 +2850,7 @@ select {
   width: 7px;
   height: 7px;
   border-radius: 999px;
-  background: var(--accent);
+  background: var(--dt-accent);
   box-shadow: 0 0 0 1.5px var(--bg-header);
   pointer-events: none;
 }
@@ -2768,4 +2900,6 @@ select {
   align-items: center;
   gap: 8px;
   margin-top: 4px;
+}
+
 }

@@ -1,19 +1,21 @@
-import React from 'react';
-import { useDeskTagStore, type MobileSection } from '../store/useDeskTagStore';
-import { formatHeaderDate } from '../utils/lunar';
 import {
   BellIcon,
-  CalendarIcon,
-  CheckIcon,
-  CloudSyncIcon,
-  ListIcon,
-  MascotAvatar,
+  CalendarDaysIcon,
+  CheckCircle2Icon,
+  CloudUploadIcon,
+  ListTodoIcon,
   MicIcon,
-  NoteIcon,
   SearchIcon,
   SettingsIcon,
-  ShirtSkinIcon,
-} from './Icons';
+  ShirtIcon,
+  StickyNoteIcon,
+} from 'lucide-react';
+import React from 'react';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+import { useDeskTagStore, type MobileSection } from '../store/useDeskTagStore';
+import { formatHeaderDate } from '../utils/lunar';
+import { MascotAvatar } from './Icons';
 import { NotificationPopover } from './NotificationPopover';
 import { SkinPopover } from './SkinPopover';
 
@@ -23,34 +25,33 @@ export const MobileTopHeader: React.FC = () => {
     unreadNotificationCount,
     showSkinPopover,
     showNotifications,
-    closeAllPopovers,
-    setShowSkinPopover,
-    setShowNotifications,
     setShowSearch,
     setShowVoiceModal,
     setMobileSection,
     triggerWebdavSyncNow,
   } = useDeskTagStore();
 
-  const syncDotClass = webdavStatus.syncing
-    ? 'syncing'
+  const syncDotClassName = webdavStatus.syncing
+    ? 'animate-pulse bg-warning'
     : webdavStatus.lastError
-      ? 'error'
+      ? 'bg-destructive'
       : webdavStatus.lastSyncAt
-        ? 'synced'
-        : 'idle';
+        ? 'bg-success'
+        : 'bg-muted-foreground/50';
 
   return (
-    <header className="mobile-top-header">
-      <div className="panel-header-left">
+    <header className="relative z-20 flex min-h-[52px] shrink-0 select-none items-center justify-between gap-2 border-b border-border bg-card/95 px-3.5 pt-[env(safe-area-inset-top,0px)] backdrop-blur-sm">
+      <div className="flex min-w-0 items-center gap-2.5">
         <MascotAvatar size={26} />
-        <span className="panel-header-date">{formatHeaderDate(new Date())}</span>
+        <span className="truncate font-semibold text-sm tracking-tight text-foreground">
+          {formatHeaderDate(new Date())}
+        </span>
       </div>
 
-      <div className="panel-header-actions">
-        <button
-          type="button"
-          className="header-icon-btn"
+      <div className="flex shrink-0 items-center gap-0.5">
+        <Button
+          aria-label="同步"
+          className="relative size-8 text-muted-foreground hover:text-foreground"
           onClick={() => {
             if (webdavStatus.configured) {
               void triggerWebdavSyncNow();
@@ -58,70 +59,80 @@ export const MobileTopHeader: React.FC = () => {
               setMobileSection('settings');
             }
           }}
+          size="icon-sm"
           title={webdavStatus.configured ? '立即同步 WebDAV' : '去设置配置 WebDAV 同步'}
-          aria-label="同步"
+          variant="ghost"
         >
-          <CloudSyncIcon size={17} />
+          <CloudUploadIcon aria-hidden="true" className="size-4" strokeWidth={1.75} />
           {webdavStatus.enabled && (
             <span
-              className={`status-dot ${syncDotClass}`}
-              style={{ position: 'absolute', bottom: 4, right: 4, width: 6, height: 6 }}
+              className={cn(
+                'pointer-events-none absolute right-1.5 bottom-1.5 size-1.5 rounded-full ring-2 ring-card',
+                syncDotClassName,
+              )}
             />
           )}
-        </button>
+        </Button>
 
-        <button
-          type="button"
-          className="header-icon-btn"
-          onClick={() => setShowSearch(true)}
+        <Button
           aria-label="搜索"
+          className="size-8 text-muted-foreground hover:text-foreground"
+          onClick={() => setShowSearch(true)}
+          size="icon-sm"
+          variant="ghost"
         >
-          <SearchIcon size={16} />
-        </button>
+          <SearchIcon aria-hidden="true" className="size-4" strokeWidth={1.75} />
+        </Button>
 
-        <button
-          type="button"
-          className="header-icon-btn"
-          onClick={() => setShowVoiceModal(true)}
+        <Button
           aria-label="语音速记"
+          className="size-8 text-muted-foreground hover:text-foreground"
+          onClick={() => setShowVoiceModal(true)}
+          size="icon-sm"
+          variant="ghost"
         >
-          <MicIcon size={16} />
-        </button>
+          <MicIcon aria-hidden="true" className="size-4" strokeWidth={1.75} />
+        </Button>
 
-        <button
-          type="button"
-          className={`header-icon-btn${showNotifications ? ' active' : ''}`}
-          onClick={() => {
-            const next = !showNotifications;
-            closeAllPopovers();
-            setShowNotifications(next);
-          }}
-          aria-label="消息中心"
+        <NotificationPopover
+          trigger={
+            <Button
+              aria-label="消息中心"
+              className={cn(
+                'relative size-8 text-muted-foreground hover:text-foreground',
+                showNotifications &&
+                  'bg-dt-accent-soft text-dt-accent-soft-text hover:bg-dt-accent-soft/85',
+              )}
+              size="icon-sm"
+              variant="ghost"
+            />
+          }
         >
-          <BellIcon size={16} />
+          <BellIcon aria-hidden="true" className="size-4" strokeWidth={1.75} />
           {unreadNotificationCount > 0 && (
-            <span className="header-badge-dot">
+            <span className="pointer-events-none absolute top-1 right-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-destructive px-1 font-bold text-[9px] leading-none text-white ring-2 ring-card tabular-nums">
               {unreadNotificationCount > 9 ? '9+' : unreadNotificationCount}
             </span>
           )}
-        </button>
+        </NotificationPopover>
 
-        <button
-          type="button"
-          className={`header-icon-btn${showSkinPopover ? ' active' : ''}`}
-          onClick={() => {
-            const next = !showSkinPopover;
-            closeAllPopovers();
-            setShowSkinPopover(next);
-          }}
-          aria-label="切换皮肤"
+        <SkinPopover
+          trigger={
+            <Button
+              aria-label="切换皮肤"
+              className={cn(
+                'size-8 text-muted-foreground hover:text-foreground',
+                showSkinPopover &&
+                  'bg-dt-accent-soft text-dt-accent-soft-text hover:bg-dt-accent-soft/85',
+              )}
+              size="icon-sm"
+              variant="ghost"
+            />
+          }
         >
-          <ShirtSkinIcon size={16} />
-        </button>
+          <ShirtIcon aria-hidden="true" className="size-4" strokeWidth={1.75} />
+        </SkinPopover>
       </div>
-
-      {showSkinPopover && <SkinPopover />}
-      {showNotifications && <NotificationPopover />}
     </header>
   );
 };
@@ -129,13 +140,13 @@ export const MobileTopHeader: React.FC = () => {
 const NAV_ITEMS: Array<{
   id: MobileSection;
   label: string;
-  renderIcon: () => React.ReactNode;
+  Icon: React.ComponentType<{ className?: string; strokeWidth?: number; 'aria-hidden'?: boolean }>;
 }> = [
-  { id: 'todo', label: '待办', renderIcon: () => <CheckIcon size={18} strokeWidth={2} /> },
-  { id: 'lists', label: '清单', renderIcon: () => <ListIcon size={18} /> },
-  { id: 'notes', label: '便签', renderIcon: () => <NoteIcon size={18} /> },
-  { id: 'views', label: '视图', renderIcon: () => <CalendarIcon size={18} /> },
-  { id: 'settings', label: '设置', renderIcon: () => <SettingsIcon size={18} /> },
+  { id: 'todo', label: '待办', Icon: CheckCircle2Icon },
+  { id: 'lists', label: '清单', Icon: ListTodoIcon },
+  { id: 'notes', label: '便签', Icon: StickyNoteIcon },
+  { id: 'views', label: '视图', Icon: CalendarDaysIcon },
+  { id: 'settings', label: '设置', Icon: SettingsIcon },
 ];
 
 export const MobileBottomNav: React.FC = () => {
@@ -148,32 +159,51 @@ export const MobileBottomNav: React.FC = () => {
   } = useDeskTagStore();
 
   return (
-    <nav className="mobile-bottom-nav" aria-label="移动端底部导航">
-      {NAV_ITEMS.map((item) => {
-        const active = mobileSection === item.id;
-        const showUpdateDot = item.id === 'settings' && hasUnignoredUpdate;
+    <nav
+      aria-label="移动端底部导航"
+      className="relative z-30 grid shrink-0 grid-cols-5 border-t border-border bg-card/95 pb-[env(safe-area-inset-bottom,0px)] backdrop-blur-sm"
+    >
+      {NAV_ITEMS.map(({ id, label, Icon }) => {
+        const active = mobileSection === id;
+        const showUpdateDot = id === 'settings' && hasUnignoredUpdate;
         return (
           <button
-            key={item.id}
-            type="button"
-            className={`mobile-nav-item${active ? ' active' : ''}`}
+            key={id}
+            aria-current={active ? 'page' : undefined}
+            className={cn(
+              'group flex min-h-[56px] flex-col items-center justify-center gap-0.5 py-1.5 text-[11px] transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
+              active
+                ? 'font-semibold text-dt-accent-soft-text'
+                : 'font-medium text-muted-foreground hover:text-foreground',
+            )}
             onClick={() => {
               closeAllPopovers();
-              if (item.id === 'todo') setShowQuadrant(false);
-              setMobileSection(item.id);
+              if (id === 'todo') setShowQuadrant(false);
+              setMobileSection(id);
             }}
+            type="button"
           >
-            <span style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
-              {item.renderIcon()}
+            <span
+              className={cn(
+                'relative inline-flex h-7 w-11 items-center justify-center rounded-full transition-colors',
+                active
+                  ? 'bg-dt-accent-soft text-dt-accent-soft-text'
+                  : 'group-hover:bg-accent group-hover:text-foreground',
+              )}
+            >
+              <Icon
+                aria-hidden
+                className="size-[18px]"
+                strokeWidth={active ? 2.1 : 1.75}
+              />
               {showUpdateDot && (
                 <span
-                  className="dt-update-dot"
-                  style={{ top: -2, right: -4 }}
                   aria-label="有可用更新"
+                  className="pointer-events-none absolute top-0.5 right-2 size-2 rounded-full bg-dt-accent ring-2 ring-card"
                 />
               )}
             </span>
-            <span>{item.label}</span>
+            <span className="leading-none">{label}</span>
           </button>
         );
       })}

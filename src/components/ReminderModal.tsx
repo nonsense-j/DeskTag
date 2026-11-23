@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { Bell, BellOff, ChevronDown, Clock, Plus, X } from 'lucide-react';
 import { useDeskTagStore } from '../store/useDeskTagStore';
 import type {
   ReminderFrequency,
@@ -19,14 +20,55 @@ import {
   formatNextPreviewDate,
   formatReminderSummary,
 } from '../utils/recurrence';
+import { cn } from '@/lib/utils';
+import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
-  BellIcon,
-  ChevronDownIcon,
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  CloseIcon,
-  PlusIcon,
-} from './Icons';
+  Dialog,
+  DialogClose,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogPanel,
+  DialogPopup,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Field, FieldLabel } from '@/components/ui/field';
+import { Frame, FramePanel } from '@/components/ui/frame';
+import { Input } from '@/components/ui/input';
+import { RadioGroupPrimitive, RadioPrimitive } from '@/components/ui/radio-group';
+import { SegmentedControl, SegmentedControlItem } from '@/components/ui/segmented-control';
+import {
+  Select,
+  SelectItem,
+  SelectPopup,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Separator } from '@/components/ui/separator';
+import { Tabs, TabsList, TabsPanel, TabsTab } from '@/components/ui/tabs';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+
+const FREQUENCY_OPTIONS: Array<{ value: ReminderFrequency; label: string }> = [
+  { value: 'daily', label: '每天' },
+  { value: 'weekly', label: '每周' },
+  { value: 'month_day', label: '指定月份与日期' },
+  { value: 'custom', label: '自定义间隔' },
+];
+
+const INTERVAL_UNIT_OPTIONS: Array<{ value: ReminderIntervalUnit; label: string }> = [
+  { value: 'hours', label: '小时' },
+  { value: 'days', label: '天' },
+];
+
+const MONTH_OPTIONS = [
+  { value: 'every', label: '每月' },
+  ...Array.from({ length: 12 }, (_, i) => ({
+    value: String(i + 1),
+    label: `${i + 1} 月`,
+  })),
+];
 
 function combineLocalDateAndTime(dateKey: string, timeStr: string): string {
   const d = parseDateKey(dateKey);
@@ -44,7 +86,8 @@ function combineLocalDateAndTime(dateKey: string, timeStr: string): string {
 }
 
 export const ReminderModal: React.FC = () => {
-  const { reminderTodoId, activeTodos, setReminderTodoId, updateTodo, showToast } = useDeskTagStore();
+  const { reminderTodoId, activeTodos, setReminderTodoId, updateTodo, showToast } =
+    useDeskTagStore();
 
   const todo = useMemo(
     () => (reminderTodoId ? activeTodos.find((t) => t.id === reminderTodoId) ?? null : null),
@@ -96,9 +139,31 @@ export const ReminderModal: React.FC = () => {
     [effectiveRule, expandPreview],
   );
 
-  if (!todo) return null;
-
-  const isAdvanced = draft.mode === 'recurring';
+  const quickPicks = useMemo(() => {
+    const now = new Date();
+    const tomorrow = addDays(now, 1);
+    const picks: Array<{ label: string; date: Date }> = [
+      { label: '15 分钟后', date: new Date(now.getTime() + 15 * 60000) },
+      { label: '1 小时后', date: new Date(now.getTime() + 60 * 60000) },
+      {
+        label: '今天 18:00',
+        date: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 18, 0, 0, 0),
+      },
+      {
+        label: '明天 09:00',
+        date: new Date(tomorrow.getFullYear(), tomorrow.getMonth(), tomorrow.getDate(), 9, 0, 0, 0),
+      },
+    ];
+    if (todo?.dueDate) {
+      const dd = parseDateKey(todo.dueDate);
+      const [h, m] = (todo.dueTime || '09:00').split(':').map((n) => Number.parseInt(n, 10));
+      picks.unshift({
+        label: `按待办时间 (${todo.dueTime || '09:00'})`,
+        date: new Date(dd.getFullYear(), dd.getMonth(), dd.getDate(), h || 9, m || 0, 0, 0),
+      });
+    }
+    return picks;
+  }, [todo]);
 
   const applyQuickPick = (dateObj: Date) => {
     const dk = formatDateKey(dateObj);
@@ -111,41 +176,6 @@ export const ReminderModal: React.FC = () => {
       times: [tk],
       nextAt: dateObj.toISOString(),
     }));
-  };
-
-  const quickPicks = (() => {
-    const now = new Date();
-    const picks: Array<{ label: string; date: Date }> = [
-      { label: '15 分钟后', date: new Date(now.getTime() + 15 * 60000) },
-      { label: '1 小时后', date: new Date(now.getTime() + 60 * 60000) },
-      {
-        label: '今天 18:00',
-        date: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 18, 0, 0, 0),
-      },
-      {
-        label: '明天 09:00',
-        date: new Date(addDays(now, 1).getFullYear(), addDays(now, 1).getMonth(), addDays(now, 1).getDate(), 9, 0, 0, 0),
-      },
-    ];
-    if (todo.dueDate) {
-      const dd = parseDateKey(todo.dueDate);
-      const [h, m] = (todo.dueTime || '09:00').split(':').map((n) => Number.parseInt(n, 10));
-      picks.unshift({
-        label: `按待办时间 (${todo.dueTime || '09:00'})`,
-        date: new Date(dd.getFullYear(), dd.getMonth(), dd.getDate(), h || 9, m || 0, 0, 0),
-      });
-    }
-    return picks;
-  })();
-
-  const toggleWeekday = (isoDay: number) => {
-    setDraft((prev) => {
-      const cur = prev.weekdays ?? [];
-      const next = cur.includes(isoDay)
-        ? cur.filter((d) => d !== isoDay)
-        : [...cur, isoDay].sort((a, b) => a - b);
-      return { ...prev, weekdays: next.length > 0 ? next : [isoDay] };
-    });
   };
 
   const updateTimeSlot = (idx: number, val: string) => {
@@ -173,6 +203,7 @@ export const ReminderModal: React.FC = () => {
   };
 
   const handleSave = () => {
+    if (!todo) return;
     const firstUpcoming = upcomingList[0];
     const finalRule: ReminderRule = {
       ...effectiveRule,
@@ -192,424 +223,515 @@ export const ReminderModal: React.FC = () => {
   };
 
   const handleClearReminder = () => {
+    if (!todo) return;
     updateTodo(todo.id, { reminderRule: null });
     setReminderTodoId(null);
     showToast('已关闭该待办提醒');
   };
 
+  const activeMode = draft.mode === 'recurring' ? 'recurring' : 'standard';
+
   return (
-    <div className="modal-overlay" onClick={() => setReminderTodoId(null)}>
-      <div
-        className="modal-card"
-        style={{ maxWidth: 468 }}
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-label="设置提醒"
+    <Dialog
+      open={Boolean(todo)}
+      onOpenChange={(open) => {
+        if (!open) setReminderTodoId(null);
+      }}
+    >
+      <DialogPopup
+        className="max-h-[min(86vh,600px)] max-w-[468px] overflow-hidden"
+        closeProps={{ 'aria-label': '关闭提醒设置' }}
       >
-        <div className="modal-header">
-          <h3 className="modal-title">设置提醒</h3>
-          <button
-            type="button"
-            className="header-icon-btn"
-            onClick={() => setReminderTodoId(null)}
-            aria-label="关闭"
-          >
-            <CloseIcon size={16} />
-          </button>
-        </div>
+        <DialogHeader className="shrink-0 px-4 pt-3.5 pb-2">
+          <DialogTitle className="flex items-center gap-2 text-[15px] font-semibold">
+            <Bell className="size-4 text-muted-foreground" />
+            <span>设置提醒</span>
+          </DialogTitle>
+          {todo && (
+            <DialogDescription className="truncate text-xs">
+              待办：{todo.title || '未命名待办'}
+            </DialogDescription>
+          )}
+        </DialogHeader>
 
-        <div className="modal-body">
-          {!isAdvanced ? (
-            <>
-              {/* Standard Reminder Mode */}
-              <div style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>
-                待办：<strong style={{ color: 'var(--text-primary)' }}>{todo.title}</strong>
-              </div>
-
-              <div>
-                <span className="field-label">快捷选择</span>
-                <div className="pill-group">
-                  {quickPicks.map((p) => (
-                    <button
-                      key={p.label}
-                      type="button"
-                      className="pill-option"
-                      onClick={() => applyQuickPick(p.date)}
-                    >
-                      {p.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="form-grid-2">
-                <div>
-                  <label className="field-label" htmlFor="rem-date">
-                    提醒日期
-                  </label>
-                  <input
-                    id="rem-date"
-                    type="date"
-                    className="field-input"
-                    value={dateInput}
-                    onChange={(e) => setDateInput(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="field-label" htmlFor="rem-time">
-                    提醒时间
-                  </label>
-                  <input
-                    id="rem-time"
-                    type="time"
-                    className="field-input"
-                    value={timeInput}
-                    onChange={(e) => setTimeInput(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              <button
-                type="button"
-                className="reminder-current-card"
-                style={{ width: '100%', textAlign: 'left' }}
-                onClick={() =>
-                  setDraft((prev) => ({
-                    ...prev,
-                    mode: 'recurring',
-                    times: prev.times.length > 0 ? prev.times : [timeInput],
-                  }))
-                }
+        {todo && (
+          <>
+            <DialogPanel className="flex flex-col gap-3 px-4 pt-1 pb-4">
+              <Tabs
+                value={activeMode}
+                onValueChange={(val) => {
+                  if (val === 'standard') {
+                    setDraft((prev) => ({ ...prev, mode: 'standard' }));
+                  } else if (val === 'recurring') {
+                    setDraft((prev) => ({
+                      ...prev,
+                      mode: 'recurring',
+                      times: prev.times.length > 0 ? prev.times : [timeInput],
+                    }));
+                  }
+                }}
+                className="gap-3"
               >
-                <div className="reminder-current-left">
-                  <span className="reminder-bell-badge">
-                    <BellIcon size={16} />
-                  </span>
-                  <div>
-                    <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text-primary)' }}>
-                      高级循环提醒
-                    </div>
-                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                      支持每周多日、每日多时段、直到完成或限定次数
-                    </div>
-                  </div>
-                </div>
-                <ChevronRightIcon size={16} style={{ color: 'var(--text-muted)' }} />
-              </button>
-            </>
-          ) : (
-            <>
-              {/* Advanced Recurring Reminder Mode */}
-              <button
-                type="button"
-                className="reminder-back-link"
-                onClick={() => setDraft((prev) => ({ ...prev, mode: 'standard' }))}
-              >
-                <ChevronLeftIcon size={14} />
-                <span>返回常规提醒</span>
-              </button>
+                <TabsList variant="default" size="sm" className="w-full">
+                  <TabsTab value="standard" className="flex-1 text-xs">
+                    快捷提醒
+                  </TabsTab>
+                  <TabsTab value="recurring" className="flex-1 text-xs">
+                    高级重复
+                  </TabsTab>
+                </TabsList>
 
-              {/* Current Reminder Time Card */}
-              <div className="reminder-current-card">
-                <div className="reminder-current-left">
-                  <span className="reminder-bell-badge">
-                    <BellIcon size={17} />
-                  </span>
-                  <div>
-                    <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>当前提醒时间</div>
-                    <div style={{ fontSize: 14, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
-                      {formatTimestampYMDHM(effectiveRule.nextAt || new Date())}
-                    </div>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  className="btn btn-sm btn-outline"
-                  onClick={() => setEditingAnchor((v) => !v)}
-                >
-                  {editingAnchor ? '收起' : '修改'}
-                </button>
-              </div>
-
-              {editingAnchor && (
-                <div className="form-grid-2">
-                  <input
-                    type="date"
-                    className="field-input"
-                    value={dateInput}
-                    onChange={(e) => setDateInput(e.target.value)}
-                  />
-                  <input
-                    type="time"
-                    className="field-input"
-                    value={timeInput}
-                    onChange={(e) => setTimeInput(e.target.value)}
-                  />
-                </div>
-              )}
-
-              {/* Frequency */}
-              <div className="reminder-row">
-                <span className="reminder-row-label">循环提醒</span>
-                <div className="reminder-row-content">
-                  <select
-                    className="field-select"
-                    style={{ width: 'auto', minWidth: 132 }}
-                    value={draft.frequency}
-                    onChange={(e) =>
-                      setDraft((prev) => ({
-                        ...prev,
-                        frequency: e.target.value as ReminderFrequency,
-                      }))
-                    }
-                  >
-                    <option value="daily">每天</option>
-                    <option value="weekly">每周</option>
-                    <option value="month_day">指定月份与日期</option>
-                    <option value="custom">自定义间隔</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Weekly Weekday Pills */}
-              {draft.frequency === 'weekly' && (
-                <div className="reminder-row">
-                  <span className="reminder-row-label">提醒星期</span>
-                  <div className="reminder-row-content">
-                    {WEEKDAY_LABELS.map((label, idx) => {
-                      const dNum = idx + 1;
-                      const selected = (draft.weekdays ?? []).includes(dNum);
-                      return (
-                        <button
-                          key={label}
-                          type="button"
-                          className={`weekday-pill${selected ? ' selected' : ''}`}
-                          onClick={() => toggleWeekday(dNum)}
+                {/* Tab 1: Quick Standard Reminder */}
+                <TabsPanel value="standard" className="flex flex-col gap-3">
+                  <div className="flex flex-col gap-1.5">
+                    <span className="text-xs font-medium text-muted-foreground">快捷选择</span>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {quickPicks.map((p) => (
+                        <Button
+                          key={p.label}
+                          size="sm"
+                          variant="outline"
+                          onClick={() => applyQuickPick(p.date)}
+                          className="justify-start gap-1.5 text-xs font-normal"
                         >
-                          {label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Month & Day Selector */}
-              {draft.frequency === 'month_day' && (
-                <div className="reminder-row">
-                  <span className="reminder-row-label">月 / 日</span>
-                  <div className="reminder-row-content">
-                    <select
-                      className="field-select"
-                      style={{ width: 100 }}
-                      value={draft.month ?? ''}
-                      onChange={(e) =>
-                        setDraft((prev) => ({
-                          ...prev,
-                          month: e.target.value ? Number(e.target.value) : null,
-                        }))
-                      }
-                    >
-                      <option value="">每月</option>
-                      {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-                        <option key={m} value={m}>
-                          {m} 月
-                        </option>
+                          <Clock className="size-3.5 text-muted-foreground" />
+                          <span className="truncate">{p.label}</span>
+                        </Button>
                       ))}
-                    </select>
-                    <input
-                      type="number"
-                      min={1}
-                      max={31}
-                      className="field-input"
-                      style={{ width: 82 }}
-                      value={draft.day ?? 1}
-                      onChange={(e) =>
-                        setDraft((prev) => ({
-                          ...prev,
-                          day: Math.max(1, Math.min(31, Number(e.target.value) || 1)),
-                        }))
-                      }
-                    />
-                    <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>日</span>
+                    </div>
                   </div>
-                </div>
-              )}
 
-              {/* Custom Interval */}
-              {draft.frequency === 'custom' && (
-                <div className="reminder-row">
-                  <span className="reminder-row-label">间隔周期</span>
-                  <div className="reminder-row-content">
-                    <span style={{ fontSize: 13 }}>每</span>
-                    <input
-                      type="number"
-                      min={1}
-                      max={365}
-                      className="field-input"
-                      style={{ width: 76 }}
-                      value={draft.intervalValue ?? 1}
-                      onChange={(e) =>
-                        setDraft((prev) => ({
-                          ...prev,
-                          intervalValue: Math.max(1, Number(e.target.value) || 1),
-                        }))
-                      }
-                    />
-                    <select
-                      className="field-select"
-                      style={{ width: 92 }}
-                      value={draft.intervalUnit ?? 'days'}
-                      onChange={(e) =>
-                        setDraft((prev) => ({
-                          ...prev,
-                          intervalUnit: e.target.value as ReminderIntervalUnit,
-                        }))
-                      }
-                    >
-                      <option value="hours">小时</option>
-                      <option value="days">天</option>
-                    </select>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <Field>
+                      <FieldLabel className="text-xs">提醒日期</FieldLabel>
+                      <Input
+                        size="sm"
+                        type="date"
+                        value={dateInput}
+                        onChange={(e) => setDateInput(e.target.value)}
+                      />
+                    </Field>
+                    <Field>
+                      <FieldLabel className="text-xs">提醒时间</FieldLabel>
+                      <Input
+                        size="sm"
+                        type="time"
+                        value={timeInput}
+                        onChange={(e) => setTimeInput(e.target.value)}
+                      />
+                    </Field>
                   </div>
-                </div>
-              )}
 
-              {/* Multi-times per day */}
-              {!(draft.frequency === 'custom' && draft.intervalUnit === 'hours') && (
-                <div className="reminder-row">
-                  <span className="reminder-row-label">提醒时间</span>
-                  <div className="reminder-row-content">
-                    {draft.times.map((t, idx) => (
-                      <div key={idx} className="time-chip-editor">
-                        <input
-                          type="time"
-                          value={t}
-                          onChange={(e) => updateTimeSlot(idx, e.target.value)}
-                          aria-label={`提醒时间 ${idx + 1}`}
-                        />
-                        {draft.times.length > 1 && (
-                          <button
-                            type="button"
-                            className="mini-icon-btn"
-                            style={{ width: 18, height: 18 }}
-                            onClick={() => removeTimeSlot(idx)}
-                            aria-label="删除时间点"
+                  {/* Next Trigger Preview Alert */}
+                  <Alert variant="info" className="px-3 py-2.5">
+                    <Bell className="size-3.5" />
+                    <AlertTitle className="text-xs font-semibold">下次提醒时间</AlertTitle>
+                    <AlertDescription className="text-xs tabular-nums text-foreground/90">
+                      {formatTimestampYMDHM(effectiveRule.nextAt || new Date())}
+                    </AlertDescription>
+                  </Alert>
+                </TabsPanel>
+
+                {/* Tab 2: Advanced Recurring Reminder */}
+                <TabsPanel value="recurring" className="flex flex-col gap-3">
+                  {/* Anchor Time Card */}
+                  <Frame>
+                    <FramePanel className="flex flex-col gap-2.5 p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex min-w-0 items-center gap-2.5">
+                          <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-accent text-foreground">
+                            <Bell className="size-3.5" />
+                          </span>
+                          <div className="min-w-0">
+                            <div className="text-[11px] text-muted-foreground">起始参考时间</div>
+                            <div className="text-[13px] font-semibold tabular-nums text-foreground">
+                              {formatTimestampYMDHM(effectiveRule.nextAt || new Date())}
+                            </div>
+                          </div>
+                        </div>
+                        <Button
+                          size="xs"
+                          variant="outline"
+                          onClick={() => setEditingAnchor((v) => !v)}
+                        >
+                          {editingAnchor ? '收起' : '修改'}
+                        </Button>
+                      </div>
+
+                      {editingAnchor && (
+                        <div className="grid grid-cols-2 gap-2 pt-1">
+                          <Input
+                            size="sm"
+                            type="date"
+                            aria-label="起始日期"
+                            value={dateInput}
+                            onChange={(e) => setDateInput(e.target.value)}
+                          />
+                          <Input
+                            size="sm"
+                            type="time"
+                            aria-label="起始时间"
+                            value={timeInput}
+                            onChange={(e) => setTimeInput(e.target.value)}
+                          />
+                        </div>
+                      )}
+                    </FramePanel>
+                  </Frame>
+
+                  {/* Rules Frame */}
+                  <Frame>
+                    <FramePanel className="flex flex-col gap-3 p-3.5">
+                      {/* Frequency */}
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="shrink-0 text-xs font-medium text-foreground">
+                          循环频率
+                        </span>
+                        <Select
+                          items={FREQUENCY_OPTIONS}
+                          value={draft.frequency}
+                          onValueChange={(val) => {
+                            if (val !== null) {
+                              setDraft((prev) => ({
+                                ...prev,
+                                frequency: val as ReminderFrequency,
+                              }));
+                            }
+                          }}
+                        >
+                          <SelectTrigger size="sm" className="w-40">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectPopup align="end" alignItemWithTrigger={false}>
+                            {FREQUENCY_OPTIONS.map((opt) => (
+                              <SelectItem key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </SelectItem>
+                            ))}
+                          </SelectPopup>
+                        </Select>
+                      </div>
+
+                      {/* Weekly Weekday Multi-Toggle */}
+                      {draft.frequency === 'weekly' && (
+                        <div className="flex flex-col gap-1.5">
+                          <span className="text-xs font-medium text-muted-foreground">
+                            提醒星期
+                          </span>
+                          <ToggleGroup
+                            multiple
+                            value={(draft.weekdays ?? []).map(String)}
+                            onValueChange={(vals) => {
+                              const nums = vals
+                                .map((v) => Number(v))
+                                .filter((n) => Number.isFinite(n))
+                                .sort((a, b) => a - b);
+                              if (nums.length > 0) {
+                                setDraft((prev) => ({ ...prev, weekdays: nums }));
+                              }
+                            }}
+                            className="flex w-full flex-wrap gap-1"
                           >
-                            <CloseIcon size={11} />
-                          </button>
+                            {WEEKDAY_LABELS.map((label, idx) => (
+                              <ToggleGroupItem
+                                key={label}
+                                value={String(idx + 1)}
+                                size="sm"
+                                className="h-7 min-w-9 flex-1 border-input bg-background px-1.5 text-xs data-pressed:border-primary data-pressed:bg-primary data-pressed:text-primary-foreground dark:bg-input/32 dark:data-pressed:bg-primary"
+                              >
+                                {label}
+                              </ToggleGroupItem>
+                            ))}
+                          </ToggleGroup>
+                        </div>
+                      )}
+
+                      {/* Month & Day Selector */}
+                      {draft.frequency === 'month_day' && (
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="shrink-0 text-xs font-medium text-foreground">
+                            月 / 日
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <Select
+                              items={MONTH_OPTIONS}
+                              value={draft.month ? String(draft.month) : 'every'}
+                              onValueChange={(val) => {
+                                if (val !== null) {
+                                  setDraft((prev) => ({
+                                    ...prev,
+                                    month: val === 'every' ? null : Number(val),
+                                  }));
+                                }
+                              }}
+                            >
+                              <SelectTrigger size="sm" className="w-24">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectPopup align="end" alignItemWithTrigger={false}>
+                                {MONTH_OPTIONS.map((opt) => (
+                                  <SelectItem key={opt.value} value={opt.value}>
+                                    {opt.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectPopup>
+                            </Select>
+                            <Input
+                              size="sm"
+                              type="number"
+                              min={1}
+                              max={31}
+                              aria-label="日期"
+                              className="w-18"
+                              value={draft.day ?? 1}
+                              onChange={(e) =>
+                                setDraft((prev) => ({
+                                  ...prev,
+                                  day: Math.max(1, Math.min(31, Number(e.target.value) || 1)),
+                                }))
+                              }
+                            />
+                            <span className="text-xs text-muted-foreground">日</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Custom Interval */}
+                      {draft.frequency === 'custom' && (
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="shrink-0 text-xs font-medium text-foreground">
+                            间隔周期
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground">每</span>
+                            <Input
+                              size="sm"
+                              type="number"
+                              min={1}
+                              max={365}
+                              aria-label="间隔数值"
+                              className="w-18"
+                              value={draft.intervalValue ?? 1}
+                              onChange={(e) =>
+                                setDraft((prev) => ({
+                                  ...prev,
+                                  intervalValue: Math.max(1, Number(e.target.value) || 1),
+                                }))
+                              }
+                            />
+                            <Select
+                              items={INTERVAL_UNIT_OPTIONS}
+                              value={draft.intervalUnit ?? 'days'}
+                              onValueChange={(val) => {
+                                if (val !== null) {
+                                  setDraft((prev) => ({
+                                    ...prev,
+                                    intervalUnit: val as ReminderIntervalUnit,
+                                  }));
+                                }
+                              }}
+                            >
+                              <SelectTrigger size="sm" className="w-22">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectPopup align="end" alignItemWithTrigger={false}>
+                                {INTERVAL_UNIT_OPTIONS.map((opt) => (
+                                  <SelectItem key={opt.value} value={opt.value}>
+                                    {opt.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectPopup>
+                            </Select>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Multi-Time Slots per Day */}
+                      {!(draft.frequency === 'custom' && draft.intervalUnit === 'hours') && (
+                        <>
+                          <Separator />
+                          <div className="flex flex-col gap-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-xs font-medium text-foreground">
+                                每日提醒时段
+                              </span>
+                              <Button
+                                size="xs"
+                                variant="ghost"
+                                onClick={addTimeSlot}
+                                className="h-6 px-1.5 text-xs"
+                              >
+                                <Plus className="size-3" />
+                                <span>添加时段</span>
+                              </Button>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {draft.times.map((t, idx) => (
+                                <div
+                                  key={idx}
+                                  className="inline-flex items-center gap-1 rounded-lg border border-input bg-background px-2 py-1 shadow-xs/5 dark:bg-input/32"
+                                >
+                                  <input
+                                    type="time"
+                                    value={t}
+                                    onChange={(e) => updateTimeSlot(idx, e.target.value)}
+                                    aria-label={`提醒时间 ${idx + 1}`}
+                                    className="bg-transparent text-xs font-medium tabular-nums text-foreground outline-none"
+                                  />
+                                  {draft.times.length > 1 && (
+                                    <Button
+                                      size="icon-xs"
+                                      variant="ghost"
+                                      className="size-4.5 rounded-sm text-muted-foreground hover:text-foreground"
+                                      onClick={() => removeTimeSlot(idx)}
+                                      aria-label="删除时间点"
+                                    >
+                                      <X className="size-3" />
+                                    </Button>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </>
+                      )}
+
+                      <Separator />
+
+                      {/* Stop Condition */}
+                      <div className="flex flex-col gap-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-xs font-medium text-foreground">停止条件</span>
+                          <SegmentedControl
+                            size="sm"
+                            aria-label="停止条件"
+                            render={
+                              <RadioGroupPrimitive
+                                value={draft.stopCondition}
+                                onValueChange={(val) => {
+                                  if (val === 'until_complete') {
+                                    setDraft((prev) => ({
+                                      ...prev,
+                                      stopCondition: 'until_complete',
+                                    }));
+                                  } else if (val === 'max_count') {
+                                    setDraft((prev) => ({
+                                      ...prev,
+                                      stopCondition: 'max_count',
+                                      maxCount: prev.maxCount || 5,
+                                    }));
+                                  }
+                                }}
+                              />
+                            }
+                          >
+                            <SegmentedControlItem
+                              render={<RadioPrimitive.Root value="until_complete" />}
+                            >
+                              直到完成
+                            </SegmentedControlItem>
+                            <SegmentedControlItem
+                              render={<RadioPrimitive.Root value="max_count" />}
+                            >
+                              限定次数
+                            </SegmentedControlItem>
+                          </SegmentedControl>
+                        </div>
+
+                        {draft.stopCondition === 'max_count' && (
+                          <div className="flex items-center justify-end gap-2">
+                            <span className="text-xs text-muted-foreground">最多提醒</span>
+                            <Input
+                              size="sm"
+                              type="number"
+                              min={1}
+                              max={999}
+                              aria-label="最大提醒次数"
+                              className="w-20"
+                              value={draft.maxCount ?? 5}
+                              onChange={(e) =>
+                                setDraft((prev) => ({
+                                  ...prev,
+                                  maxCount: Math.max(1, Number(e.target.value) || 1),
+                                }))
+                              }
+                            />
+                            <span className="text-xs text-muted-foreground">次后停止</span>
+                          </div>
                         )}
                       </div>
-                    ))}
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-outline"
-                      style={{ width: 32, padding: 0 }}
-                      onClick={addTimeSlot}
-                      title="添加每日提醒时间点"
-                      aria-label="添加时间点"
-                    >
-                      <PlusIcon size={14} />
-                    </button>
-                  </div>
-                </div>
-              )}
+                    </FramePanel>
+                  </Frame>
 
-              {/* Stop Condition */}
-              <div className="reminder-row">
-                <span className="reminder-row-label">停止条件</span>
-                <div className="reminder-row-content">
-                  <button
-                    type="button"
-                    className={`pill-option${draft.stopCondition === 'until_complete' ? ' selected' : ''}`}
-                    onClick={() => setDraft((prev) => ({ ...prev, stopCondition: 'until_complete' }))}
+                  {/* Live Summary & Upcoming Preview Alert */}
+                  <Alert variant="info" className="px-3 py-2.5">
+                    <Bell className="size-3.5" />
+                    <AlertTitle className="text-xs font-semibold">
+                      {formatReminderSummary(effectiveRule)}
+                    </AlertTitle>
+                    <AlertDescription className="gap-1.5 text-xs">
+                      {upcomingList.length > 0 ? (
+                        <div className="flex flex-wrap items-center gap-1 pt-0.5">
+                          <span className="text-muted-foreground">接下来：</span>
+                          {upcomingList.map((d, i) => (
+                            <Badge
+                              key={i}
+                              variant="secondary"
+                              size="sm"
+                              className="tabular-nums font-normal"
+                            >
+                              {formatNextPreviewDate(d)}
+                            </Badge>
+                          ))}
+                        </div>
+                      ) : (
+                        <span>暂无待触发时间</span>
+                      )}
+                    </AlertDescription>
+                    <AlertAction>
+                      <Button
+                        size="icon-xs"
+                        variant="ghost"
+                        onClick={() => setExpandPreview((v) => !v)}
+                        title={expandPreview ? '收起预览' : '展开更多触发时间'}
+                        aria-label={expandPreview ? '收起预览' : '展开更多触发时间'}
+                      >
+                        <ChevronDown
+                          className={cn(
+                            'size-3.5 transition-transform duration-150',
+                            expandPreview && 'rotate-180',
+                          )}
+                        />
+                      </Button>
+                    </AlertAction>
+                  </Alert>
+                </TabsPanel>
+              </Tabs>
+            </DialogPanel>
+
+            <DialogFooter className="shrink-0 justify-between px-4 py-2.5">
+              <div>
+                {todo.reminderRule?.enabled && (
+                  <Button
+                    size="sm"
+                    variant="destructive-outline"
+                    onClick={handleClearReminder}
                   >
-                    直到完成
-                  </button>
-                  <button
-                    type="button"
-                    className={`pill-option${draft.stopCondition === 'max_count' ? ' selected' : ''}`}
-                    onClick={() =>
-                      setDraft((prev) => ({
-                        ...prev,
-                        stopCondition: 'max_count',
-                        maxCount: prev.maxCount || 5,
-                      }))
-                    }
-                  >
-                    限定次数
-                  </button>
-                  {draft.stopCondition === 'max_count' && (
-                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                      <input
-                        type="number"
-                        min={1}
-                        max={999}
-                        className="field-input"
-                        style={{ width: 66, padding: '4px 8px' }}
-                        value={draft.maxCount ?? 5}
-                        onChange={(e) =>
-                          setDraft((prev) => ({
-                            ...prev,
-                            maxCount: Math.max(1, Number(e.target.value) || 1),
-                          }))
-                        }
-                      />
-                      <span style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>次</span>
-                    </div>
-                  )}
-                </div>
+                    <BellOff className="size-3.5" />
+                    <span>关闭提醒</span>
+                  </Button>
+                )}
               </div>
-
-              {/* Live Summary & Upcoming Preview Card */}
-              <div className="reminder-preview-box">
-                <div className="reminder-preview-summary">{formatReminderSummary(effectiveRule)}</div>
-                <div className="reminder-preview-next">
-                  <div style={{ flex: 1, lineHeight: 1.6 }}>
-                    <span>接下来：</span>
-                    {upcomingList.length > 0 ? (
-                      upcomingList.map((d, i) => (
-                        <span key={i} style={{ marginRight: 10 }}>
-                          {formatNextPreviewDate(d)}
-                        </span>
-                      ))
-                    ) : (
-                      <span>暂无待触发时间</span>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    className="mini-icon-btn"
-                    onClick={() => setExpandPreview((v) => !v)}
-                    title={expandPreview ? '收起预览' : '展开更多触发时间'}
-                  >
-                    <ChevronDownIcon
-                      size={14}
-                      style={{ transform: expandPreview ? 'rotate(180deg)' : undefined }}
-                    />
-                  </button>
-                </div>
+              <div className="flex items-center gap-2">
+                <DialogClose render={<Button size="sm" variant="ghost" />}>取消</DialogClose>
+                <Button size="sm" variant="default" onClick={handleSave}>
+                  保存提醒
+                </Button>
               </div>
-            </>
-          )}
-
-          {/* Primary CTA */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
-            <button type="button" className="btn btn-primary btn-block" onClick={handleSave}>
-              设置提醒
-            </button>
-            {todo.reminderRule?.enabled && (
-              <button
-                type="button"
-                className="btn btn-outline btn-block"
-                style={{ height: 34, fontSize: 13 }}
-                onClick={handleClearReminder}
-              >
-                关闭提醒
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
+            </DialogFooter>
+          </>
+        )}
+      </DialogPopup>
+    </Dialog>
   );
 };

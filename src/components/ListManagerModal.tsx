@@ -1,6 +1,33 @@
 import React, { useState } from 'react';
+import { ArrowDown, ArrowUp, Check, ListTodo, Pin, Plus, Trash2 } from 'lucide-react';
 import { useDeskTagStore } from '../store/useDeskTagStore';
-import { CloseIcon, PinIcon, PlusIcon, TrashIcon } from './Icons';
+import type { TodoList } from '../types/models';
+import { cn } from '@/lib/utils';
+import {
+  AlertDialog,
+  AlertDialogClose,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogPopup,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogClose,
+  DialogFooter,
+  DialogHeader,
+  DialogPanel,
+  DialogPopup,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Frame, FramePanel } from '@/components/ui/frame';
+import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group';
+import { Popover, PopoverPopup, PopoverTrigger } from '@/components/ui/popover';
+import { Separator } from '@/components/ui/separator';
+import { Switch } from '@/components/ui/switch';
 
 const LIST_COLOR_PALETTE = [
   '#df6542',
@@ -30,8 +57,9 @@ export const ListManagerModal: React.FC = () => {
   const [newName, setNewName] = useState('');
   const [newColor, setNewColor] = useState(LIST_COLOR_PALETTE[0]);
   const [pinOnCreate, setPinOnCreate] = useState(true);
-
-  if (!showListManager) return null;
+  const [pendingDelete, setPendingDelete] = useState<{ list: TodoList; count: number } | null>(
+    null,
+  );
 
   const handleCreate = () => {
     const clean = newName.trim();
@@ -51,189 +79,282 @@ export const ListManagerModal: React.FC = () => {
   };
 
   return (
-    <div className="modal-overlay" onClick={() => setShowListManager(false)}>
-      <div
-        className="modal-card"
-        style={{ maxWidth: 460 }}
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-label="管理清单"
+    <>
+      <Dialog
+        open={showListManager}
+        onOpenChange={(open) => setShowListManager(open)}
       >
-        <div className="modal-header">
-          <h3 className="modal-title">管理清单与侧边页签</h3>
-          <button
-            type="button"
-            className="header-icon-btn"
-            onClick={() => setShowListManager(false)}
-            aria-label="关闭"
-          >
-            <CloseIcon size={16} />
-          </button>
-        </div>
+        <DialogPopup
+          className="max-h-[min(86vh,580px)] max-w-[468px] overflow-hidden"
+          closeProps={{ 'aria-label': '关闭管理清单' }}
+        >
+          <DialogHeader className="shrink-0 px-4 pt-3.5 pb-2">
+            <DialogTitle className="flex items-center gap-2 text-[15px] font-semibold">
+              <ListTodo className="size-4 text-muted-foreground" />
+              <span>管理清单与侧边页签</span>
+            </DialogTitle>
+          </DialogHeader>
 
-        <div className="modal-body">
-          {/* Create List Card */}
-          <div className="warm-card">
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                type="text"
-                className="field-input"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleCreate();
-                  }
-                }}
-                placeholder="输入新清单名称，如 工作项目 / 学习计划"
-              />
-              <button type="button" className="btn btn-primary" onClick={handleCreate}>
-                <PlusIcon size={14} />
-                <span>新建</span>
-              </button>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                {LIST_COLOR_PALETTE.map((c) => (
-                  <button
-                    key={c}
-                    type="button"
-                    onClick={() => setNewColor(c)}
-                    style={{
-                      width: 18,
-                      height: 18,
-                      borderRadius: 999,
-                      background: c,
-                      border: newColor === c ? '2px solid var(--text-primary)' : '2px solid transparent',
-                    }}
-                    aria-label={`选择颜色 ${c}`}
-                  />
-                ))}
-              </div>
-              <label className="nl-keep-raw-label">
-                <input
-                  type="checkbox"
-                  checked={pinOnCreate}
-                  onChange={(e) => setPinOnCreate(e.target.checked)}
-                />
-                <span>创建后固定到侧边</span>
-              </label>
-            </div>
-          </div>
-
-          {/* Existing Lists */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-            {activeLists.length === 0 ? (
-              <div className="empty-hint-box">暂无自定义清单，可在上方新建</div>
-            ) : (
-              activeLists.map((list, idx) => {
-                const count = activeTodos.filter((t) => t.listId === list.id).length;
-                return (
-                  <div
-                    key={list.id}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      padding: '8px 10px',
-                      borderRadius: 10,
-                      border: '1px solid var(--border)',
-                      background: 'var(--bg-surface)',
-                    }}
-                  >
-                    <input
-                      type="color"
-                      value={list.color}
-                      onChange={(e) => updateList(list.id, { color: e.target.value })}
-                      style={{
-                        width: 22,
-                        height: 22,
-                        border: 'none',
-                        background: 'transparent',
-                        cursor: 'pointer',
-                        padding: 0,
-                      }}
-                      title="更改清单颜色"
-                    />
-                    <input
-                      type="text"
-                      value={list.name}
-                      onChange={(e) => updateList(list.id, { name: e.target.value })}
-                      style={{
-                        flex: 1,
-                        minWidth: 0,
-                        border: 'none',
-                        background: 'transparent',
-                        fontSize: 13.5,
-                        fontWeight: 500,
-                      }}
-                    />
-                    <span className="section-count-badge" title={`${count} 条待办`}>
-                      {count}
-                    </span>
-
-                    <button
-                      type="button"
-                      className={`mini-icon-btn${list.pinnedToSide ? ' active' : ''}`}
-                      style={
-                        list.pinnedToSide
-                          ? { background: 'var(--accent-soft)', color: 'var(--accent)' }
-                          : undefined
+          <DialogPanel className="flex flex-col gap-3 px-4 pt-1 pb-4">
+            {/* Create List Frame */}
+            <Frame>
+              <FramePanel className="flex flex-col gap-3 p-3.5">
+                <InputGroup>
+                  <InputGroupInput
+                    size="sm"
+                    type="text"
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleCreate();
                       }
-                      onClick={() => toggleListPin(list.id)}
-                      title={list.pinnedToSide ? '取消固定到侧边' : '固定到侧边页签'}
+                    }}
+                    placeholder="输入新清单名称，如 工作项目 / 学习计划"
+                  />
+                  <InputGroupAddon align="inline-end">
+                    <Button
+                      size="xs"
+                      variant="default"
+                      disabled={!newName.trim()}
+                      onClick={handleCreate}
                     >
-                      <PinIcon size={13.5} />
-                    </button>
+                      <Plus className="size-3.5" />
+                      <span>新建</span>
+                    </Button>
+                  </InputGroupAddon>
+                </InputGroup>
 
-                    <button
-                      type="button"
-                      className="mini-icon-btn"
-                      disabled={idx === 0}
-                      onClick={() => moveList(idx, -1)}
-                      title="上移"
-                    >
-                      ↑
-                    </button>
-                    <button
-                      type="button"
-                      className="mini-icon-btn"
-                      disabled={idx === activeLists.length - 1}
-                      onClick={() => moveList(idx, 1)}
-                      title="下移"
-                    >
-                      ↓
-                    </button>
-                    <button
-                      type="button"
-                      className="mini-icon-btn danger"
-                      onClick={() => {
-                        deleteList(list.id);
-                        showToast(`已删除清单「${list.name}」`);
-                      }}
-                      title="删除清单（其中待办将转为普通待办）"
-                    >
-                      <TrashIcon size={13.5} />
-                    </button>
+                <div className="flex flex-wrap items-center justify-between gap-2.5">
+                  <div className="flex items-center gap-1.5" role="radiogroup" aria-label="选择清单颜色">
+                    {LIST_COLOR_PALETTE.map((c) => {
+                      const active = newColor.toLowerCase() === c.toLowerCase();
+                      return (
+                        <button
+                          key={c}
+                          type="button"
+                          onClick={() => setNewColor(c)}
+                          aria-label={`选择颜色 ${c}`}
+                          aria-pressed={active}
+                          className={cn(
+                            'inline-flex size-4.5 cursor-pointer items-center justify-center rounded-full transition-transform outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                            active && 'scale-110 ring-2 ring-foreground ring-offset-2 ring-offset-card',
+                          )}
+                          style={{ backgroundColor: c }}
+                        >
+                          {active && <Check className="size-2.5 text-white drop-shadow-xs" />}
+                        </button>
+                      );
+                    })}
                   </div>
-                );
-              })
-            )}
-          </div>
-        </div>
 
-        <div className="modal-footer">
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => setShowListManager(false)}
-          >
-            完成
-          </button>
-        </div>
-      </div>
-    </div>
+                  <label className="inline-flex cursor-pointer select-none items-center gap-2 text-xs text-muted-foreground">
+                    <span>创建后固定到侧边</span>
+                    <Switch
+                      checked={pinOnCreate}
+                      onCheckedChange={setPinOnCreate}
+                      aria-label="创建后固定到侧边"
+                    />
+                  </label>
+                </div>
+              </FramePanel>
+            </Frame>
+
+            {/* Existing Lists Frame */}
+            <Frame>
+              {activeLists.length === 0 ? (
+                <FramePanel className="py-7 text-center text-xs text-muted-foreground">
+                  暂无自定义清单，可在上方新建
+                </FramePanel>
+              ) : (
+                <FramePanel className="divide-y divide-border p-0">
+                  {activeLists.map((list, idx) => {
+                    const count = activeTodos.filter((t) => t.listId === list.id).length;
+                    return (
+                      <div
+                        key={list.id}
+                        className="flex items-center gap-2 px-3 py-2 transition-colors hover:bg-accent/40"
+                      >
+                        {/* Color Dot Picker Popover */}
+                        <Popover>
+                          <PopoverTrigger
+                            render={
+                              <button
+                                type="button"
+                                title="更改清单颜色"
+                                aria-label={`更改清单 ${list.name} 颜色`}
+                                className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-full border border-border/80 shadow-xs/5 transition-transform hover:scale-110 focus-visible:ring-2 focus-visible:ring-ring outline-none"
+                                style={{ backgroundColor: list.color }}
+                              />
+                            }
+                          />
+                          <PopoverPopup side="bottom" align="start" className="w-48">
+                            <div className="flex flex-col gap-2.5">
+                              <span className="text-xs font-medium text-foreground">
+                                选择清单颜色
+                              </span>
+                              <div className="grid grid-cols-4 gap-2">
+                                {LIST_COLOR_PALETTE.map((c) => {
+                                  const selected =
+                                    list.color.toLowerCase() === c.toLowerCase();
+                                  return (
+                                    <button
+                                      key={c}
+                                      type="button"
+                                      onClick={() => updateList(list.id, { color: c })}
+                                      aria-label={`设为颜色 ${c}`}
+                                      className={cn(
+                                        'inline-flex size-6 cursor-pointer items-center justify-center rounded-full transition-transform hover:scale-105',
+                                        selected &&
+                                          'ring-2 ring-foreground ring-offset-2 ring-offset-popover',
+                                      )}
+                                      style={{ backgroundColor: c }}
+                                    >
+                                      {selected && (
+                                        <Check className="size-3 text-white drop-shadow-xs" />
+                                      )}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                              <Separator />
+                              <label className="flex cursor-pointer items-center justify-between gap-2 text-xs text-muted-foreground">
+                                <span>自定义色值</span>
+                                <input
+                                  type="color"
+                                  value={list.color}
+                                  onChange={(e) =>
+                                    updateList(list.id, { color: e.target.value })
+                                  }
+                                  className="h-5 w-8 cursor-pointer rounded border border-border bg-transparent p-0"
+                                />
+                              </label>
+                            </div>
+                          </PopoverPopup>
+                        </Popover>
+
+                        {/* Inline Editable Name */}
+                        <input
+                          type="text"
+                          value={list.name}
+                          onChange={(e) => updateList(list.id, { name: e.target.value })}
+                          aria-label="清单名称"
+                          className="min-w-0 flex-1 bg-transparent text-[13px] font-medium text-foreground outline-none focus-visible:underline"
+                        />
+
+                        <Badge
+                          variant="secondary"
+                          size="sm"
+                          className="shrink-0 tabular-nums"
+                          title={`${count} 条待办`}
+                        >
+                          {count}
+                        </Badge>
+
+                        {/* Pin to Side Button */}
+                        <Button
+                          size="icon-xs"
+                          variant={list.pinnedToSide ? 'secondary' : 'ghost'}
+                          aria-pressed={list.pinnedToSide}
+                          onClick={() => toggleListPin(list.id)}
+                          title={list.pinnedToSide ? '取消固定到侧边' : '固定到侧边页签'}
+                          aria-label={list.pinnedToSide ? '取消固定到侧边' : '固定到侧边页签'}
+                          className={cn(
+                            list.pinnedToSide
+                              ? 'text-dt-accent-soft-text bg-dt-accent-soft border border-dt-accent-border'
+                              : 'text-muted-foreground',
+                          )}
+                        >
+                          <Pin className="size-3.5" />
+                        </Button>
+
+                        {/* Reorder Controls */}
+                        <Button
+                          size="icon-xs"
+                          variant="ghost"
+                          disabled={idx === 0}
+                          onClick={() => moveList(idx, -1)}
+                          title="上移"
+                          aria-label="上移清单"
+                        >
+                          <ArrowUp className="size-3.5" />
+                        </Button>
+                        <Button
+                          size="icon-xs"
+                          variant="ghost"
+                          disabled={idx === activeLists.length - 1}
+                          onClick={() => moveList(idx, 1)}
+                          title="下移"
+                          aria-label="下移清单"
+                        >
+                          <ArrowDown className="size-3.5" />
+                        </Button>
+
+                        {/* Delete Trigger */}
+                        <Button
+                          size="icon-xs"
+                          variant="ghost"
+                          onClick={() => setPendingDelete({ list, count })}
+                          title="删除清单（其中待办将转为普通待办）"
+                          aria-label={`删除清单 ${list.name}`}
+                          className="text-muted-foreground hover:text-destructive-foreground"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </FramePanel>
+              )}
+            </Frame>
+          </DialogPanel>
+
+          <DialogFooter className="shrink-0 px-4 py-2.5">
+            <DialogClose render={<Button size="sm" variant="default" />}>完成</DialogClose>
+          </DialogFooter>
+        </DialogPopup>
+      </Dialog>
+
+      {/* Delete Confirmation AlertDialog */}
+      <AlertDialog
+        open={Boolean(pendingDelete)}
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(null);
+        }}
+      >
+        <AlertDialogPopup>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-base">
+              确认删除清单「{pendingDelete?.list.name}」？
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-xs">
+              {pendingDelete && pendingDelete.count > 0
+                ? `该清单下包含 ${pendingDelete.count} 条待办，删除后这些待办将被保留并转为普通待办。`
+                : '删除后该清单及其侧边页签将被移除，此操作无法撤销。'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogClose render={<Button size="sm" variant="ghost" />}>取消</AlertDialogClose>
+            <AlertDialogClose
+              render={
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={() => {
+                    if (!pendingDelete) return;
+                    deleteList(pendingDelete.list.id);
+                    showToast(`已删除清单「${pendingDelete.list.name}」`);
+                    setPendingDelete(null);
+                  }}
+                />
+              }
+            >
+              确认删除
+            </AlertDialogClose>
+          </AlertDialogFooter>
+        </AlertDialogPopup>
+      </AlertDialog>
+    </>
   );
 };

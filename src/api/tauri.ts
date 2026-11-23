@@ -84,7 +84,7 @@ function writeJson<T>(key: string, value: T): void {
 function getFallbackAppVersion(): string {
   return typeof __APP_VERSION__ === 'string' && __APP_VERSION__.trim()
     ? __APP_VERSION__
-    : '1.1.0';
+    : '1.2.0';
 }
 
 function detectBrowserPlatform(): PlatformInfo {

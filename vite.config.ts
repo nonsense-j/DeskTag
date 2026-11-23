@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs';
-import { defineConfig } from 'vite';
+import { fileURLToPath, URL } from 'node:url';
+import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
+import { defineConfig } from 'vite';
 
 const host = process.env.TAURI_DEV_HOST;
 const pkg = JSON.parse(
@@ -8,9 +10,14 @@ const pkg = JSON.parse(
 ) as { version?: string };
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [tailwindcss(), react()],
+  resolve: {
+    alias: {
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+    },
+  },
   define: {
-    __APP_VERSION__: JSON.stringify(pkg.version ?? '1.1.0'),
+    __APP_VERSION__: JSON.stringify(pkg.version ?? '1.2.0'),
   },
   base: './',
   clearScreen: false,

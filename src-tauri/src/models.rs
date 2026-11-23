@@ -472,7 +472,7 @@ pub struct SyncedSettings {
 }
 
 fn default_skin_id() -> String {
-    "morning-linen".to_string()
+    "ink-minimal".to_string()
 }
 fn default_opacity() -> f64 {
     1.0

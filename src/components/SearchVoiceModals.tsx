@@ -1,16 +1,54 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  AlertCircle,
+  CheckCircle2,
+  CheckSquare,
+  Clock,
+  FileText,
+  History,
+  Lock,
+  Mic,
+  Search,
+  Square,
+  Volume2,
+  X,
+} from 'lucide-react';
 import { saveAttachment } from '../api/tauri';
 import { useDeskTagStore } from '../store/useDeskTagStore';
 import { formatDateKey, formatTimestampYMDHM, pad2 } from '../utils/lunar';
+import { cn } from '@/lib/utils';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
-  AudioIcon,
-  CheckIcon,
-  CloseIcon,
-  MicIcon,
-  NoteIcon,
-  SearchIcon,
-  TimelineIcon,
-} from './Icons';
+  CommandDialog,
+  CommandDialogPopup,
+  CommandDialogPrimitive,
+  CommandFooter,
+  CommandPanel,
+} from '@/components/ui/command';
+import {
+  Dialog,
+  DialogHeader,
+  DialogPanel,
+  DialogPopup,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Field, FieldLabel } from '@/components/ui/field';
+import { Frame, FramePanel } from '@/components/ui/frame';
+import { Input } from '@/components/ui/input';
+import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group';
+import { Kbd, KbdGroup } from '@/components/ui/kbd';
+import { RadioGroupPrimitive, RadioPrimitive } from '@/components/ui/radio-group';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { SegmentedControl, SegmentedControlItem } from '@/components/ui/segmented-control';
+import {
+  Select,
+  SelectItem,
+  SelectPopup,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 // ---------------------------------------------------------------------------
 // Highlight helper
@@ -37,12 +75,7 @@ function renderHighlighted(text: string, query: string): React.ReactNode {
     parts.push(
       <mark
         key={key++}
-        style={{
-          background: 'var(--accent-soft)',
-          color: 'var(--accent-soft-text)',
-          borderRadius: 3,
-          padding: '0 2px',
-        }}
+        className="rounded-xs bg-dt-accent-soft px-0.5 font-medium text-dt-accent-soft-text"
       >
         {text.slice(idx, idx + q.length)}
       </mark>,
@@ -63,19 +96,36 @@ function buildSnippet(text: string, query: string, maxLen = 78): string {
 }
 
 // ---------------------------------------------------------------------------
-// 1. Global Search Modal (检索)
+// 1. Global Search Modal (Ctrl+K 检索)
 // ---------------------------------------------------------------------------
+
+type SearchKind = 'todo' | 'note' | 'timeline';
+type SearchFilterKind = 'all' | SearchKind;
 
 interface SearchHit {
   id: string;
-  kind: 'todo' | 'note' | 'timeline';
+  kind: SearchKind;
   title: string;
   subtitle: string;
   badge: string;
   completed?: boolean;
+  locked?: boolean;
   todoId?: string;
   noteId?: string;
 }
+
+const SEARCH_FILTER_OPTIONS: Array<{ value: SearchFilterKind; label: string }> = [
+  { value: 'all', label: '全部' },
+  { value: 'todo', label: '待办' },
+  { value: 'note', label: '便签' },
+  { value: 'timeline', label: '时间轴' },
+];
+
+const GROUP_LABELS: Record<SearchKind, string> = {
+  todo: '待办',
+  note: '便签',
+  timeline: '时间轴',
+};
 
 export const SearchModal: React.FC = () => {
   const {
@@ -93,8 +143,9 @@ export const SearchModal: React.FC = () => {
   } = useDeskTagStore();
 
   const [query, setQuery] = useState('');
-  const [filterKind, setFilterKind] = useState<'all' | 'todo' | 'note' | 'timeline'>('all');
+  const [filterKind, setFilterKind] = useState<SearchFilterKind>('all');
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   useEffect(() => {
     if (showSearch) {
@@ -144,7 +195,7 @@ export const SearchModal: React.FC = () => {
             kind: 'todo',
             title: todo.title,
             subtitle,
-            badge: todo.completed ? '已完成待办' : '待办',
+            badge: todo.completed ? '已完成' : '待办',
             completed: todo.completed,
             todoId: todo.id,
           });
@@ -164,9 +215,10 @@ export const SearchModal: React.FC = () => {
             kind: 'note',
             title: note.title || '未命名便签',
             subtitle: locked
-              ? '🔒 隐私分组已锁定'
+              ? '隐私分组已锁定'
               : buildSnippet(note.content || '空白便签', query),
             badge: '普通便签',
+            locked,
             noteId: note.id,
           });
         }
@@ -184,8 +236,9 @@ export const SearchModal: React.FC = () => {
               id: `tl_note_${note.id}`,
               kind: 'timeline',
               title: note.title || '时间轴便签',
-              subtitle: '🔒 隐私分组已锁定',
+              subtitle: '隐私分组已锁定',
               badge: '时间轴',
+              locked: true,
               noteId: note.id,
             });
           }
@@ -203,7 +256,7 @@ export const SearchModal: React.FC = () => {
               badge: '时间轴记录',
               noteId: note.id,
             });
-            if (!q) break; // when browsing empty query, show only latest entry per timeline
+            if (!q) break;
           }
         }
         if (!matchedAnyEntry && titleMatch) {
@@ -222,6 +275,39 @@ export const SearchModal: React.FC = () => {
     return hits.slice(0, 40);
   }, [activeTodos, activeNotes, lockedGroupIds, query, filterKind]);
 
+  // Group results by kind while preserving exact flat indices for keyboard navigation
+  const groupedSections = useMemo(() => {
+    const sections: Array<{
+      kind: SearchKind;
+      label: string;
+      items: Array<{ hit: SearchHit; flatIndex: number }>;
+    }> = [];
+    const byKind = new Map<SearchKind, Array<{ hit: SearchHit; flatIndex: number }>>();
+    results.forEach((hit, flatIndex) => {
+      const bucket = byKind.get(hit.kind);
+      if (bucket) {
+        bucket.push({ hit, flatIndex });
+      } else {
+        byKind.set(hit.kind, [{ hit, flatIndex }]);
+      }
+    });
+    (['todo', 'note', 'timeline'] as SearchKind[]).forEach((kind) => {
+      const items = byKind.get(kind);
+      if (items && items.length > 0) {
+        sections.push({ kind, label: GROUP_LABELS[kind], items });
+      }
+    });
+    return sections;
+  }, [results]);
+
+  // Keep highlighted row visible when navigating with keyboard
+  useEffect(() => {
+    const el = itemRefs.current[selectedIndex];
+    if (el) {
+      el.scrollIntoView({ block: 'nearest' });
+    }
+  }, [selectedIndex]);
+
   const handleOpenHit = (hit: SearchHit) => {
     setShowSearch(false);
     setQuery('');
@@ -237,233 +323,207 @@ export const SearchModal: React.FC = () => {
     }
   };
 
-  if (!showSearch) return null;
-
   return (
-    <div
-      onClick={() => setShowSearch(false)}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(20, 16, 12, 0.36)',
-        display: 'flex',
-        alignItems: 'flex-start',
-        justifyContent: 'center',
-        padding: '56px 14px 16px',
-        zIndex: 90,
-      }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: '100%',
-          maxWidth: 460,
-          maxHeight: '76vh',
-          display: 'flex',
-          flexDirection: 'column',
-          borderRadius: 14,
-          background: 'var(--bg-popover)',
-          border: '1px solid var(--border)',
-          boxShadow: 'var(--shadow-popover)',
-          overflow: 'hidden',
-        }}
-      >
+    <CommandDialog open={showSearch} onOpenChange={setShowSearch}>
+      <CommandDialogPopup className="max-h-[min(78vh,480px)] max-w-[464px] overflow-hidden">
+        <CommandDialogPrimitive.Title className="sr-only">
+          全局检索
+        </CommandDialogPrimitive.Title>
+
         {/* Search Input Header */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            padding: '11px 14px',
-            borderBottom: '1px solid var(--border)',
-            background: 'var(--bg-header)',
-          }}
-        >
-          <SearchIcon size={16} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-          <input
-            autoFocus
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'ArrowDown') {
-                e.preventDefault();
-                setSelectedIndex((i) => Math.min(results.length - 1, i + 1));
-              } else if (e.key === 'ArrowUp') {
-                e.preventDefault();
-                setSelectedIndex((i) => Math.max(0, i - 1));
-              } else if (e.key === 'Enter' && results[selectedIndex]) {
-                e.preventDefault();
-                handleOpenHit(results[selectedIndex]);
-              } else if (e.key === 'Escape') {
-                setShowSearch(false);
-              }
-            }}
-            placeholder="检索待办、子任务、标签、便签与时间轴… (Ctrl+K)"
-            style={{
-              flex: 1,
-              minWidth: 0,
-              border: 'none',
-              outline: 'none',
-              background: 'transparent',
-              color: 'var(--text-primary)',
-              fontSize: 13.5,
-            }}
-          />
-          <button
-            type="button"
-            aria-label="关闭检索"
-            onClick={() => setShowSearch(false)}
-            style={{
-              border: 'none',
-              background: 'transparent',
-              color: 'var(--text-muted)',
-              cursor: 'pointer',
-              display: 'inline-flex',
-              padding: 2,
-            }}
-          >
-            <CloseIcon size={15} />
-          </button>
-        </div>
-
-        {/* Scope Filter Pills */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 5,
-            padding: '7px 12px',
-            borderBottom: '1px solid var(--border)',
-            background: 'var(--bg-panel)',
-          }}
-        >
-          {(
-            [
-              ['all', '全部'],
-              ['todo', '待办'],
-              ['note', '普通便签'],
-              ['timeline', '时间轴'],
-            ] as const
-          ).map(([k, label]) => {
-            const active = filterKind === k;
-            return (
-              <button
-                key={k}
-                type="button"
-                onClick={() => setFilterKind(k)}
-                style={{
-                  padding: '3px 9px',
-                  borderRadius: 999,
-                  border: 'none',
-                  background: active ? 'var(--pill-active-bg)' : 'transparent',
-                  color: active ? 'var(--pill-active-text)' : 'var(--text-secondary)',
-                  fontSize: 12,
-                  fontWeight: active ? 600 : 500,
-                  cursor: 'pointer',
-                }}
+        <div className="shrink-0 px-2.5 pt-2 pb-1.5">
+          <InputGroup className="border-transparent bg-transparent shadow-none before:hidden has-[input:focus-visible]:border-transparent has-[input:focus-visible]:ring-0 dark:bg-transparent">
+            <InputGroupInput
+              autoFocus
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'ArrowDown') {
+                  e.preventDefault();
+                  setSelectedIndex((i) => (results.length > 0 ? Math.min(results.length - 1, i + 1) : 0));
+                } else if (e.key === 'ArrowUp') {
+                  e.preventDefault();
+                  setSelectedIndex((i) => Math.max(0, i - 1));
+                } else if (e.key === 'Enter' && results[selectedIndex]) {
+                  e.preventDefault();
+                  handleOpenHit(results[selectedIndex]);
+                } else if (e.key === 'Escape') {
+                  setShowSearch(false);
+                }
+              }}
+              placeholder="检索待办、子任务、标签、便签与时间轴…"
+              aria-label="全局检索"
+              className="[&_input]:text-sm"
+            />
+            <InputGroupAddon align="inline-start">
+              <Search className="size-4 text-muted-foreground" />
+            </InputGroupAddon>
+            <InputGroupAddon align="inline-end" className="gap-1.5">
+              {query && (
+                <>
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    aria-label="清空搜索词"
+                    className="h-5 px-1.5 text-[11px] font-normal text-muted-foreground hover:text-foreground"
+                    onClick={() => setQuery('')}
+                  >
+                    清空
+                  </Button>
+                  <span aria-hidden="true" className="h-3.5 w-px bg-border" />
+                </>
+              )}
+              <Button
+                size="icon-xs"
+                variant="ghost"
+                aria-label="关闭检索"
+                className="text-muted-foreground hover:text-foreground"
+                onClick={() => setShowSearch(false)}
               >
-                {label}
-              </button>
-            );
-          })}
-          <span style={{ marginLeft: 'auto', fontSize: 11.5, color: 'var(--text-muted)' }}>
-            {results.length} 条结果
-          </span>
+                <X className="size-4" />
+              </Button>
+            </InputGroupAddon>
+          </InputGroup>
+
+          {/* Scope Filter Segmented Control + Result Count */}
+          <div className="mt-1 flex items-center justify-between gap-2 px-1 pb-1">
+            <SegmentedControl
+              size="sm"
+              aria-label="检索范围"
+              render={
+                <RadioGroupPrimitive
+                  value={filterKind}
+                  onValueChange={(val) => {
+                    if (typeof val === 'string') setFilterKind(val as SearchFilterKind);
+                  }}
+                />
+              }
+            >
+              {SEARCH_FILTER_OPTIONS.map((opt) => (
+                <SegmentedControlItem
+                  key={opt.value}
+                  className="px-2 text-xs"
+                  render={<RadioPrimitive.Root value={opt.value} />}
+                >
+                  {opt.label}
+                </SegmentedControlItem>
+              ))}
+            </SegmentedControl>
+            <Badge variant="secondary" size="sm" className="shrink-0 tabular-nums">
+              {results.length} 条结果
+            </Badge>
+          </div>
         </div>
 
-        {/* Results List */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {results.length === 0 ? (
-            <div style={{ padding: '28px 12px', textAlign: 'center', fontSize: 13, color: 'var(--text-muted)' }}>
-              没有找到包含「{query}」的内容
-            </div>
-          ) : (
-            results.map((hit, idx) => {
-              const active = idx === selectedIndex;
-              return (
-                <button
-                  key={hit.id}
-                  type="button"
-                  onMouseEnter={() => setSelectedIndex(idx)}
-                  onClick={() => handleOpenHit(hit)}
-                  style={{
-                    width: '100%',
-                    textAlign: 'left',
-                    padding: '8px 10px',
-                    borderRadius: 9,
-                    border: `1px solid ${active ? 'var(--accent-border)' : 'transparent'}`,
-                    background: active ? 'var(--bg-surface-hover)' : 'transparent',
-                    color: 'var(--text-primary)',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'flex-start',
-                    gap: 9,
-                  }}
-                >
-                  <span style={{ marginTop: 2, color: 'var(--accent)', flexShrink: 0 }}>
-                    {hit.kind === 'todo' ? (
-                      <CheckIcon size={14} />
-                    ) : hit.kind === 'timeline' ? (
-                      <TimelineIcon size={14} />
-                    ) : (
-                      <NoteIcon size={14} />
-                    )}
-                  </span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: 6,
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontWeight: 600,
-                          fontSize: 13,
-                          color: hit.completed ? 'var(--text-completed)' : 'var(--text-primary)',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {renderHighlighted(hit.title, query)}
-                      </span>
-                      <span
-                        style={{
-                          fontSize: 10.5,
-                          padding: '1px 6px',
-                          borderRadius: 999,
-                          background: 'var(--tag-bg)',
-                          color: 'var(--tag-text)',
-                          flexShrink: 0,
-                        }}
-                      >
-                        {hit.badge}
-                      </span>
+        {/* Categorized Results Panel */}
+        <CommandPanel className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <ScrollArea overscrollContain scrollFade className="min-h-0 flex-1">
+            <div className="flex flex-col gap-2 p-2">
+              {results.length === 0 ? (
+                <div className="flex flex-col items-center justify-center gap-1.5 py-9 text-center">
+                  <Search className="size-5 text-muted-foreground/50" />
+                  <p className="text-xs text-muted-foreground">
+                    {query.trim() ? `没有找到包含「${query.trim()}」的内容` : '暂无可检索内容'}
+                  </p>
+                </div>
+              ) : (
+                groupedSections.map((section) => (
+                  <div key={section.kind} className="flex flex-col gap-0.5">
+                    <div className="px-2 py-1 text-[11px] font-medium text-muted-foreground">
+                      {section.label}
                     </div>
-                    <div
-                      style={{
-                        fontSize: 12,
-                        color: 'var(--text-muted)',
-                        marginTop: 2,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {renderHighlighted(hit.subtitle, query)}
-                    </div>
+                    {section.items.map(({ hit, flatIndex }) => {
+                      const active = flatIndex === selectedIndex;
+                      return (
+                        <button
+                          key={hit.id}
+                          ref={(node) => {
+                            itemRefs.current[flatIndex] = node;
+                          }}
+                          type="button"
+                          onMouseEnter={() => setSelectedIndex(flatIndex)}
+                          onClick={() => handleOpenHit(hit)}
+                          className={cn(
+                            'flex w-full cursor-pointer items-start gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors outline-none',
+                            active
+                              ? 'bg-accent text-accent-foreground'
+                              : 'text-foreground hover:bg-accent/60',
+                          )}
+                        >
+                          <span className="mt-0.5 shrink-0 text-muted-foreground">
+                            {hit.kind === 'todo' ? (
+                              <CheckCircle2
+                                className={cn(
+                                  'size-3.5',
+                                  hit.completed ? 'text-muted-foreground/60' : 'text-foreground/75',
+                                )}
+                              />
+                            ) : hit.kind === 'timeline' ? (
+                              <History className="size-3.5 text-foreground/75" />
+                            ) : (
+                              <FileText className="size-3.5 text-foreground/75" />
+                            )}
+                          </span>
+
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-2">
+                              <span
+                                className={cn(
+                                  'truncate text-[13px] font-medium',
+                                  hit.completed && 'text-muted-foreground line-through',
+                                )}
+                              >
+                                {renderHighlighted(hit.title, query)}
+                              </span>
+                              <Badge
+                                variant={hit.completed ? 'secondary' : 'outline'}
+                                size="sm"
+                                className="shrink-0"
+                              >
+                                {hit.badge}
+                              </Badge>
+                            </div>
+                            <div className="mt-0.5 flex items-center gap-1 truncate text-xs text-muted-foreground">
+                              {hit.locked && <Lock className="size-3 shrink-0" />}
+                              <span className="truncate">
+                                {renderHighlighted(hit.subtitle, query)}
+                              </span>
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
-                </button>
-              );
-            })
-          )}
-        </div>
-      </div>
-    </div>
+                ))
+              )}
+            </div>
+          </ScrollArea>
+        </CommandPanel>
+
+        {/* Footer with Kbd Navigation Hints */}
+        <CommandFooter className="shrink-0">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="inline-flex items-center gap-1">
+              <KbdGroup>
+                <Kbd>↑</Kbd>
+                <Kbd>↓</Kbd>
+              </KbdGroup>
+              <span>切换</span>
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <Kbd>↵</Kbd>
+              <span>打开</span>
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <Kbd>Esc</Kbd>
+              <span>关闭</span>
+            </span>
+          </div>
+          <Kbd className="px-1.5 font-mono text-[10.5px]">Ctrl+K</Kbd>
+        </CommandFooter>
+      </CommandDialogPopup>
+    </CommandDialog>
   );
 };
 
@@ -519,6 +579,20 @@ export const VoiceRecordModal: React.FC = () => {
   const timelineNotes = useMemo(
     () => activeNotes.filter((n) => n.kind === 'timeline'),
     [activeNotes],
+  );
+
+  const timelineSelectItems = useMemo(
+    () =>
+      timelineNotes.length > 0
+        ? [
+            { value: '__auto__', label: `${timelineNotes[0].title || '默认时间轴'}（默认）` },
+            ...timelineNotes.map((n) => ({
+              value: n.id,
+              label: n.title || '未命名时间轴',
+            })),
+          ]
+        : [],
+    [timelineNotes],
   );
 
   const cleanupMedia = () => {
@@ -585,13 +659,22 @@ export const VoiceRecordModal: React.FC = () => {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
 
-      const preferredTypes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
+      const preferredTypes = [
+        'audio/webm;codecs=opus',
+        'audio/webm',
+        'audio/ogg;codecs=opus',
+        'audio/mp4',
+      ];
       const chosenMime =
-        preferredTypes.find((t) => typeof MediaRecorder.isTypeSupported === 'function' && MediaRecorder.isTypeSupported(t)) ??
-        'audio/webm';
+        preferredTypes.find(
+          (t) => typeof MediaRecorder.isTypeSupported === 'function' && MediaRecorder.isTypeSupported(t),
+        ) ?? 'audio/webm';
       setAudioMime(chosenMime);
 
-      const recorder = new MediaRecorder(stream, chosenMime ? { mimeType: chosenMime } : undefined);
+      const recorder = new MediaRecorder(
+        stream,
+        chosenMime ? { mimeType: chosenMime } : undefined,
+      );
       mediaRecorderRef.current = recorder;
       chunksRef.current = [];
 
@@ -621,7 +704,9 @@ export const VoiceRecordModal: React.FC = () => {
 
       // Live audio waveform visualization
       try {
-        const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+        const AudioCtx =
+          window.AudioContext ||
+          (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
         if (AudioCtx) {
           const ctx = new AudioCtx();
           audioCtxRef.current = ctx;
@@ -682,7 +767,6 @@ export const VoiceRecordModal: React.FC = () => {
     try {
       const att = await persistAudioAttachment();
       const title = caption.trim() || '语音待办';
-      // Create a companion timeline entry if none, or attach to todo directly
       const created = addTodo({
         title,
         dueDate: formatDateKey(new Date()),
@@ -733,250 +817,173 @@ export const VoiceRecordModal: React.FC = () => {
     }
   };
 
-  if (!showVoiceModal) return null;
+  const handleCloseVoice = () => {
+    if (recording) stopRecording();
+    setShowVoiceModal(false);
+  };
 
   const timerText = `${pad2(Math.floor(elapsedSec / 60))}:${pad2(elapsedSec % 60)}`;
 
   return (
-    <div
-      onClick={() => {
-        if (!recording) setShowVoiceModal(false);
-      }}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(20, 16, 12, 0.38)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 16,
-        zIndex: 90,
+    <Dialog
+      open={showVoiceModal}
+      onOpenChange={(open) => {
+        if (!open && !recording) {
+          setShowVoiceModal(false);
+        }
       }}
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: '100%',
-          maxWidth: 370,
-          borderRadius: 14,
-          background: 'var(--bg-popover)',
-          border: '1px solid var(--border)',
-          boxShadow: 'var(--shadow-popover)',
-          overflow: 'hidden',
-          display: 'flex',
-          flexDirection: 'column',
-        }}
+      <DialogPopup
+        showCloseButton={false}
+        className="max-w-[392px] overflow-hidden"
       >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '11px 14px',
-            background: 'var(--bg-header)',
-            borderBottom: '1px solid var(--border)',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontWeight: 700, fontSize: 14 }}>
-            <MicIcon size={16} style={{ color: 'var(--accent)' }} />
+        <DialogHeader className="flex-row items-center justify-between px-4 pt-3.5 pb-2">
+          <DialogTitle className="flex items-center gap-2 text-[15px] font-semibold">
+            <Mic className="size-4 text-muted-foreground" />
             <span>快速录音</span>
-          </div>
-          <button
-            type="button"
+          </DialogTitle>
+          <Button
+            size="icon-sm"
+            variant="ghost"
             aria-label="关闭录音"
-            onClick={() => {
-              if (recording) stopRecording();
-              setShowVoiceModal(false);
-            }}
-            style={{
-              border: 'none',
-              background: 'transparent',
-              color: 'var(--text-muted)',
-              cursor: 'pointer',
-              display: 'inline-flex',
-            }}
+            onClick={handleCloseVoice}
           >
-            <CloseIcon size={15} />
-          </button>
-        </div>
+            <X className="size-4" />
+          </Button>
+        </DialogHeader>
 
-        <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {/* Waveform + Timer */}
-          <div
-            style={{
-              padding: '14px 12px',
-              borderRadius: 12,
-              background: 'var(--bg-surface)',
-              border: '1px solid var(--border)',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: 10,
-            }}
-          >
-            <div
-              style={{
-                height: 44,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 4,
-              }}
-            >
-              {levels.map((lv, i) => (
+        <DialogPanel className="flex flex-col gap-3 px-4 pt-1 pb-4">
+          {/* Waveform Visualizer inside FramePanel */}
+          <Frame>
+            <FramePanel className="flex flex-col items-center gap-3 py-4 px-3">
+              {/* Recording Status & Timer Badge */}
+              <Badge
+                variant={recording ? 'error' : 'secondary'}
+                size="lg"
+                className="gap-1.5 rounded-full px-3 font-mono tabular-nums"
+              >
                 <span
-                  key={i}
-                  style={{
-                    width: 4,
-                    height: recording ? `${Math.max(16, lv)}%` : '22%',
-                    borderRadius: 999,
-                    background: recording ? 'var(--accent)' : 'var(--border-strong)',
-                    transition: 'height 80ms ease',
-                  }}
+                  className={cn(
+                    'inline-block size-2 rounded-full',
+                    recording ? 'bg-destructive animate-pulse' : 'bg-muted-foreground/50',
+                  )}
+                  aria-hidden="true"
                 />
-              ))}
-            </div>
+                <span>{timerText}</span>
+              </Badge>
 
-            <div
-              style={{
-                fontSize: 20,
-                fontWeight: 700,
-                fontVariantNumeric: 'tabular-nums',
-                color: recording ? 'var(--accent)' : 'var(--text-primary)',
-              }}
-            >
-              {timerText}
-            </div>
+              {/* 16-bar Live Waveform */}
+              <div
+                className="flex h-12 items-center gap-1"
+                aria-hidden="true"
+              >
+                {levels.map((lv, i) => (
+                  <span
+                    key={i}
+                    className={cn(
+                      'w-1 rounded-full transition-[height,background-color] duration-75',
+                      recording ? 'bg-dt-accent' : 'bg-muted-foreground/25',
+                    )}
+                    style={{
+                      height: recording ? `${Math.max(16, lv)}%` : '22%',
+                    }}
+                  />
+                ))}
+              </div>
 
-            <button
-              type="button"
-              onClick={() => (recording ? stopRecording() : void startRecording())}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '7px 18px',
-                borderRadius: 999,
-                border: 'none',
-                background: recording ? 'var(--danger)' : 'var(--accent)',
-                color: '#ffffff',
-                fontWeight: 600,
-                fontSize: 13,
-                cursor: 'pointer',
-              }}
-            >
-              <MicIcon size={14} />
-              <span>{recording ? '停止录音' : audioBlob ? '重新录制' : '开始录音'}</span>
-            </button>
-          </div>
+              <Button
+                size="sm"
+                variant={recording ? 'destructive' : 'default'}
+                onClick={() => (recording ? stopRecording() : void startRecording())}
+                className="rounded-full px-5"
+              >
+                {recording ? <Square className="size-3.5" /> : <Mic className="size-3.5" />}
+                <span>{recording ? '停止录音' : audioBlob ? '重新录制' : '开始录音'}</span>
+              </Button>
+            </FramePanel>
+          </Frame>
 
           {errorMsg && (
-            <div
-              style={{
-                padding: '8px 10px',
-                borderRadius: 9,
-                background: 'var(--danger-soft)',
-                color: 'var(--danger)',
-                fontSize: 12,
-                lineHeight: 1.5,
-              }}
-            >
-              {errorMsg}
-            </div>
+            <Alert variant="error" className="px-3 py-2">
+              <AlertCircle className="size-3.5" />
+              <AlertDescription className="text-xs text-destructive-foreground">
+                {errorMsg}
+              </AlertDescription>
+            </Alert>
           )}
 
           {/* Playback & Save Destination */}
           {audioUrl && !recording && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <AudioIcon size={15} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-                <audio controls src={audioUrl} style={{ width: '100%', height: 32 }} />
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center gap-2 rounded-xl border border-border bg-coss-frame-well px-3 py-2">
+                <Volume2 className="size-4 shrink-0 text-muted-foreground" />
+                <audio controls src={audioUrl} className="h-8 w-full" />
               </div>
 
-              <input
-                type="text"
-                value={caption}
-                onChange={(e) => setCaption(e.target.value)}
-                placeholder="输入语音标题或说明…"
-                style={{
-                  padding: '7px 10px',
-                  borderRadius: 8,
-                  border: '1px solid var(--border)',
-                  background: 'var(--bg-input)',
-                  color: 'var(--text-primary)',
-                  fontSize: 13,
-                  outline: 'none',
-                }}
-              />
+              <Field>
+                <FieldLabel className="text-xs">语音说明</FieldLabel>
+                <Input
+                  size="sm"
+                  type="text"
+                  value={caption}
+                  onChange={(e) => setCaption(e.target.value)}
+                  placeholder="输入语音标题或说明…"
+                />
+              </Field>
 
               {timelineNotes.length > 0 && (
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
-                  <span style={{ color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>目标时间轴：</span>
-                  <select
+                <div className="flex items-center justify-between gap-2">
+                  <span className="shrink-0 text-xs font-medium text-muted-foreground">
+                    目标时间轴
+                  </span>
+                  <Select
+                    items={timelineSelectItems}
                     value={targetTimelineId}
-                    onChange={(e) => setTargetTimelineId(e.target.value)}
-                    style={{
-                      flex: 1,
-                      padding: '4px 8px',
-                      borderRadius: 7,
-                      border: '1px solid var(--border)',
-                      background: 'var(--bg-input)',
-                      color: 'var(--text-primary)',
-                      fontSize: 12,
+                    onValueChange={(val) => {
+                      if (val !== null) setTargetTimelineId(val);
                     }}
                   >
-                    <option value="__auto__">{timelineNotes[0].title || '默认时间轴'}</option>
-                    {timelineNotes.map((n) => (
-                      <option key={n.id} value={n.id}>
-                        {n.title || '未命名时间轴'}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                    <SelectTrigger size="sm" className="w-48">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectPopup align="end" alignItemWithTrigger={false}>
+                      {timelineSelectItems.map((item) => (
+                        <SelectItem key={item.value} value={item.value}>
+                          {item.label}
+                        </SelectItem>
+                      ))}
+                    </SelectPopup>
+                  </Select>
+                </div>
               )}
 
-              <div style={{ display: 'flex', gap: 8, marginTop: 2 }}>
-                <button
-                  type="button"
-                  disabled={saving}
+              <div className="flex items-center gap-2 pt-0.5">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  loading={saving}
                   onClick={() => void handleSaveToTodo()}
-                  style={{
-                    flex: 1,
-                    padding: '7px 10px',
-                    borderRadius: 9,
-                    border: '1px solid var(--accent-border)',
-                    background: 'var(--accent-soft)',
-                    color: 'var(--accent-soft-text)',
-                    fontWeight: 600,
-                    fontSize: 12.5,
-                    cursor: 'pointer',
-                  }}
+                  className="flex-1 text-xs"
                 >
-                  存为今日待办
-                </button>
-                <button
-                  type="button"
-                  disabled={saving}
+                  <CheckSquare className="size-3.5" />
+                  <span>保存为待办</span>
+                </Button>
+                <Button
+                  size="sm"
+                  variant="default"
+                  loading={saving}
                   onClick={() => void handleSaveToTimeline()}
-                  style={{
-                    flex: 1,
-                    padding: '7px 10px',
-                    borderRadius: 9,
-                    border: 'none',
-                    background: 'var(--accent)',
-                    color: 'var(--accent-text)',
-                    fontWeight: 600,
-                    fontSize: 12.5,
-                    cursor: 'pointer',
-                  }}
+                  className="flex-1 text-xs"
                 >
-                  {saving ? '保存中…' : '追加到时间轴'}
-                </button>
+                  <Clock className="size-3.5" />
+                  <span>保存到时间轴</span>
+                </Button>
               </div>
             </div>
           )}
-        </div>
-      </div>
-    </div>
+        </DialogPanel>
+      </DialogPopup>
+    </Dialog>
   );
 };
 

@@ -331,7 +331,7 @@ function buildStarterData(base: AppData): AppData {
 | 展开 / 收起面板 | Alt+Shift+D | 任意应用窗口下全局呼出 |
 | 快速新建待办 | Alt+Shift+N | 自动聚焦顶部待办输入框 |
 | 全局内容检索 | Ctrl+K | 跨待办、清单与便签即时搜索 |
-| 切换外观主题 | 顶部主题图标 | 内置 11 款原创浅色与深色主题 |
+| 切换外观主题 | 顶部主题图标 | 内置 12 款原创浅色与深色主题 |
 
 ## 双向关联与大纲
 - 使用 \`#\` / \`##\` 标题即可自动生成右侧浮动目录大纲。
@@ -435,7 +435,7 @@ function defaultPlatformInfo(): PlatformInfo {
   const isWin = /Windows/i.test(ua);
   const platform = isAndroid ? 'android' : isMac ? 'macos' : isWin ? 'windows' : 'linux';
   const appVersion =
-    typeof __APP_VERSION__ === 'string' && __APP_VERSION__.trim() ? __APP_VERSION__ : '1.1.0';
+    typeof __APP_VERSION__ === 'string' && __APP_VERSION__.trim() ? __APP_VERSION__ : '1.2.0';
   return {
     platform,
     isDesktop: !isAndroid,

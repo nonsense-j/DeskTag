@@ -1,4 +1,47 @@
+import {
+  AlarmClockIcon,
+  CheckIcon,
+  ChevronDownIcon,
+  LayoutGridIcon,
+  ListTodoIcon,
+  PencilIcon,
+  PinIcon,
+  PlusIcon,
+  RepeatIcon,
+  SendIcon,
+  SparklesIcon,
+  Trash2Icon,
+} from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from '@/components/ui/collapsible';
+import {
+  Dialog,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogPanel,
+  DialogPopup,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Frame, FramePanel } from '@/components/ui/frame';
+import { InputGroup, InputGroupAddon, InputGroupTextarea } from '@/components/ui/input-group';
+import { Kbd } from '@/components/ui/kbd';
+import {
+  Menu,
+  MenuGroup,
+  MenuItem,
+  MenuPopup,
+  MenuSeparator,
+  MenuShortcut,
+  MenuTrigger,
+} from '@/components/ui/menu';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { SegmentedControl, SegmentedControlItem } from '@/components/ui/segmented-control';
+import { Tooltip, TooltipPopup, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
 import { useDeskTagStore, type TodoScope } from '../store/useDeskTagStore';
 import type { TodoItem, TodoPriority } from '../types/models';
 import {
@@ -11,22 +54,6 @@ import {
 } from '../utils/lunar';
 import { parseBatchLines, parseTodoText } from '../utils/nlParser';
 import { formatReminderChipLabel, formatRepeatSummary } from '../utils/recurrence';
-import {
-  AlarmIcon,
-  CheckIcon,
-  ChevronDownIcon,
-  ChevronRightIcon,
-  CloseIcon,
-  EditIcon,
-  ListIcon,
-  PinIcon,
-  PlusIcon,
-  QuadrantIcon,
-  RepeatIcon,
-  SendIcon,
-  SparklesIcon,
-  TrashIcon,
-} from './Icons';
 
 export interface TodoViewProps {
   /** Optional explicit list filter (e.g. when opened from a pinned side tab or mobile Lists tab) */
@@ -38,6 +65,26 @@ const PRIORITY_WEIGHT: Record<TodoPriority, number> = {
   medium: 1,
   low: 2,
   none: 3,
+};
+
+const PRIORITY_LABEL: Record<Exclude<TodoPriority, 'none'>, string> = {
+  high: '高',
+  medium: '中',
+  low: '低',
+};
+
+const PRIORITY_COLOR_VAR: Record<Exclude<TodoPriority, 'none'>, string> = {
+  high: 'var(--priority-high)',
+  medium: 'var(--priority-medium)',
+  low: 'var(--priority-low)',
+};
+
+const SORT_LABELS: Record<string, string> = {
+  manual: '手动排序',
+  priority: '按优先级',
+  due_date: '按截止时间',
+  created_at: '按创建时间',
+  updated_at: '按更新时间',
 };
 
 export const TodoView: React.FC<TodoViewProps> = ({ listIdOverride }) => {
@@ -103,7 +150,7 @@ export const TodoView: React.FC<TodoViewProps> = ({ listIdOverride }) => {
     }
   }, [quickAddFocusTrigger]);
 
-  // Expand the first incomplete todo with subtasks on initial render for warm visual clarity
+  // Expand the first incomplete todo with subtasks on initial render for clarity
   useEffect(() => {
     setExpandedTodoIds((prev) => {
       if (Object.keys(prev).length > 0) return prev;
@@ -151,7 +198,16 @@ export const TodoView: React.FC<TodoViewProps> = ({ listIdOverride }) => {
       }
       return true;
     });
-  }, [activeTodos, effectiveListId, monthRange.endKey, monthRange.startKey, todoScope, todayKey, weekRange.endKey, weekRange.startKey]);
+  }, [
+    activeTodos,
+    effectiveListId,
+    monthRange.endKey,
+    monthRange.startKey,
+    todoScope,
+    todayKey,
+    weekRange.endKey,
+    weekRange.startKey,
+  ]);
 
   // Sort according to synced settings
   const sortedTodos = useMemo(() => {
@@ -216,7 +272,8 @@ export const TodoView: React.FC<TodoViewProps> = ({ listIdOverride }) => {
 
     addTodo({
       title: finalTitle,
-      dueDate: useNl && nlParsed.dueDate !== null ? nlParsed.dueDate : defaultDueDateForCurrentScope(),
+      dueDate:
+        useNl && nlParsed.dueDate !== null ? nlParsed.dueDate : defaultDueDateForCurrentScope(),
       dueTime: useNl ? nlParsed.dueTime : null,
       priority: useNl && nlParsed.priority ? nlParsed.priority : 'none',
       tags: useNl ? nlParsed.tags : [],
@@ -310,14 +367,16 @@ export const TodoView: React.FC<TodoViewProps> = ({ listIdOverride }) => {
   );
 
   const placeholderText = activeListObj
-    ? `添加到「${activeListObj.name}」 Enter 创建，Shift+Enter 换行`
+    ? `添加到「${activeListObj.name}」，支持自然语言识别日期与标签…`
     : todoScope === 'today'
-      ? '添加今日待办 Enter 创建，Shift+Enter 换行'
+      ? '添加今日待办，支持自然语言识别日期与标签…'
       : todoScope === 'week'
-        ? '添加本周待办 Enter 创建，Shift+Enter 换行'
+        ? '添加本周待办，支持自然语言识别日期与标签…'
         : todoScope === 'month'
-          ? '添加本月待办 Enter 创建，Shift+Enter 换行'
-          : '添加待安排事项 Enter 创建，Shift+Enter 换行';
+          ? '添加本月待办，支持自然语言识别日期与标签…'
+          : '添加待安排事项，支持自然语言识别日期与标签…';
+
+  const sortLabel = SORT_LABELS[data.settings.sortBy] ?? '手动排序';
 
   const handleTouchStart = (id: string, e: React.TouchEvent) => {
     if (!isMobileLayout) return;
@@ -351,6 +410,14 @@ export const TodoView: React.FC<TodoViewProps> = ({ listIdOverride }) => {
     setSwipeState(null);
   };
 
+  const getNlBadgeVariant = (kind: string): 'info' | 'warning' | 'success' | 'outline' | 'secondary' => {
+    if (kind === 'dueDate' || kind === 'dueTime' || kind === 'date' || kind === 'time') return 'info';
+    if (kind === 'priority') return 'warning';
+    if (kind === 'repeat' || kind === 'reminder') return 'success';
+    if (kind === 'tag' || kind === 'tags') return 'outline';
+    return 'secondary';
+  };
+
   const renderTodoItem = (todo: TodoItem, index: number) => {
     const hasSubtasks = todo.subtasks.length > 0;
     const isExpanded = Boolean(expandedTodoIds[todo.id]);
@@ -372,190 +439,299 @@ export const TodoView: React.FC<TodoViewProps> = ({ listIdOverride }) => {
     return (
       <div
         key={todo.id}
-        className={`todo-item-wrap${todo.completed ? ' completed' : ''}`}
-        onTouchStart={(e) => handleTouchStart(todo.id, e)}
-        onTouchMove={(e) => handleTouchMove(todo.id, e)}
+        className={cn(
+          'group/todo relative px-2.5 py-2.5 transition-colors hover:bg-accent/60',
+          todo.completed && 'opacity-72 hover:opacity-90',
+        )}
         onTouchEnd={() => handleTouchEnd(todo.id)}
+        onTouchMove={(e) => handleTouchMove(todo.id, e)}
+        onTouchStart={(e) => handleTouchStart(todo.id, e)}
         style={
           translateX !== 0
             ? { transform: `translateX(${translateX}px)`, transition: 'none' }
             : undefined
         }
       >
-        <div className="todo-row">
+        {/* Main Task Row — strict top alignment (items-start + h-5 first-line optical box) */}
+        <div className="flex items-start gap-1.5">
           {/* Expand chevron slot */}
-          {hasSubtasks ? (
-            <button
-              type="button"
-              className="todo-expand-slot"
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleExpand(todo.id);
-              }}
-              aria-label={isExpanded ? '收起子任务' : '展开子任务'}
-            >
-              {isExpanded ? <ChevronDownIcon size={13} /> : <ChevronRightIcon size={13} />}
-            </button>
-          ) : (
-            <span className="todo-expand-slot" aria-hidden="true" />
-          )}
+          <div className="flex h-5 w-4 shrink-0 items-center justify-center">
+            {hasSubtasks ? (
+              <button
+                aria-expanded={isExpanded}
+                aria-label={isExpanded ? '收起子任务' : '展开子任务'}
+                className="inline-flex size-4 cursor-pointer items-center justify-center rounded text-muted-foreground transition-colors outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleExpand(todo.id);
+                }}
+                type="button"
+              >
+                <ChevronDownIcon
+                  aria-hidden="true"
+                  className={cn(
+                    'size-3.5 transition-transform duration-150',
+                    !isExpanded && '-rotate-90',
+                  )}
+                  strokeWidth={2}
+                />
+              </button>
+            ) : (
+              <span aria-hidden="true" className="w-4" />
+            )}
+          </div>
 
-          {/* Circular Checkbox */}
-          <button
-            type="button"
-            className={`todo-checkbox${todo.completed ? ' checked' : ''}`}
-            onClick={(e) => {
-              e.stopPropagation();
-              toggleTodo(todo.id);
-            }}
-            aria-label={todo.completed ? '标记为未完成' : '标记为已完成'}
-          >
-            {todo.completed && <CheckIcon size={11} strokeWidth={2.6} />}
-          </button>
+          {/* Square-rounded coss Checkbox */}
+          <div className="flex h-5 shrink-0 items-center">
+            <Checkbox
+              aria-label={todo.completed ? '标记为未完成' : '标记为已完成'}
+              checked={todo.completed}
+              className={cn(
+                'size-[15px] rounded-[4px]',
+                todo.completed && 'opacity-80',
+              )}
+              onCheckedChange={() => toggleTodo(todo.id)}
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
 
           {/* Main content column */}
           <div
-            className="todo-content-col"
+            className="min-w-0 flex-1 cursor-pointer pl-1 outline-none focus-visible:rounded-md focus-visible:ring-2 focus-visible:ring-ring"
             onClick={() => setEditingTodoId(todo.id)}
-            role="button"
-            tabIndex={0}
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
                 setEditingTodoId(todo.id);
               }
             }}
+            role="button"
+            tabIndex={0}
           >
-            <div className="todo-line-1">
+            {/* Line 1: Index + Priority dot + Title (strictly aligned to first line) */}
+            <div className="flex items-start gap-1.5">
               {data.settings.autoNumbering && (
-                <span className="todo-index-num">{index + 1}.</span>
-              )}
-              {todo.priority !== 'none' && !todo.completed && (
-                <span className={`priority-dot ${todo.priority}`} title={`优先级：${todo.priority}`} />
-              )}
-              <span className="todo-title-text">{todo.title}</span>
-
-              {hasSubtasks && (
-                <span className="progress-capsule" title={`子任务进度 ${doneSubCount}/${todo.subtasks.length}`}>
-                  <span className="progress-capsule-fill" style={{ width: `${progressPct}%` }} />
-                  <span className="progress-capsule-label">{progressPct}%</span>
+                <span className="inline-flex h-5 shrink-0 items-center text-[13px] font-medium text-muted-foreground tabular-nums">
+                  {index + 1}.
                 </span>
               )}
+              {todo.priority !== 'none' && !todo.completed && (
+                <span className="inline-flex h-5 shrink-0 items-center">
+                  <span
+                    className="size-1.5 rounded-full"
+                    style={{ backgroundColor: PRIORITY_COLOR_VAR[todo.priority] }}
+                    title={`优先级：${PRIORITY_LABEL[todo.priority]}`}
+                  />
+                </span>
+              )}
+              <span
+                className={cn(
+                  'min-w-0 flex-1 break-words text-[var(--font-body-size)] leading-5',
+                  todo.completed
+                    ? 'font-normal text-muted-foreground line-through'
+                    : 'font-medium text-foreground',
+                )}
+              >
+                {todo.title}
+              </span>
             </div>
 
+            {/* Line 2: Metadata (Reminder / Repeat / Hairline List Pill / Soft Neutral Tag Pills) */}
             {showMetaLine && (
-              <div className="todo-meta-row">
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                 {reminderChip && (
                   <button
-                    type="button"
-                    className="reminder-chip"
+                    className="inline-flex cursor-pointer items-center gap-1 rounded px-0.5 text-[11px] font-medium text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
                     onClick={(e) => {
                       e.stopPropagation();
                       setReminderTodoId(todo.id);
                     }}
                     title="点击修改提醒"
+                    type="button"
                   >
-                    <AlarmIcon size={12.5} />
-                    <span>{reminderChip}</span>
+                    <AlarmClockIcon aria-hidden="true" className="size-3 opacity-80" strokeWidth={1.85} />
+                    <span className="tabular-nums">{reminderChip}</span>
                   </button>
                 )}
 
                 {repeatChip && (
-                  <span className="repeat-chip" title="重复待办">
-                    <RepeatIcon size={11.5} />
+                  <span
+                    className="inline-flex items-center gap-1 text-[11px] text-muted-foreground"
+                    title="重复待办"
+                  >
+                    <RepeatIcon aria-hidden="true" className="size-3 opacity-80" strokeWidth={1.85} />
                     <span>{repeatChip}</span>
                   </span>
                 )}
 
-                {todo.tags.map((tag) => (
-                  <span key={tag} className="tag-pill">
-                    {tag}
-                  </span>
-                ))}
-
                 {listBadge && (
-                  <span className="tag-pill" style={{ gap: 5 }}>
-                    <span className="list-color-dot" style={{ background: listBadge.color, width: 6, height: 6 }} />
-                    {listBadge.name}
+                  <span className="inline-flex h-4.5 items-center gap-1.5 rounded-md border border-border bg-card px-1.5 text-[11px] font-medium text-foreground/80 shadow-2xs">
+                    <span
+                      aria-hidden="true"
+                      className="size-1.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: listBadge.color }}
+                    />
+                    <span className="max-w-28 truncate">{listBadge.name}</span>
                   </span>
                 )}
+
+                {todo.tags.map((tag) => (
+                  <Badge
+                    key={tag}
+                    className="h-4.5 rounded-md px-1.5 text-[11px] font-normal text-muted-foreground"
+                    size="sm"
+                    variant="secondary"
+                  >
+                    {tag}
+                  </Badge>
+                ))}
               </div>
             )}
           </div>
 
-          {/* Right side: due time + hover quick actions */}
-          <div className="todo-right-col">
-            {dueLabel && (
-              <span className={`todo-due-label hide-on-hover${isOverdue ? ' overdue' : ''}`}>
-                {dueLabel}
+          {/* Right side: slim progress + due time / overdue badge, smoothly swapping to hover actions on desktop */}
+          <div className="flex h-5 shrink-0 items-center gap-2 pl-1.5">
+            {hasSubtasks && (
+              <span
+                className={cn(
+                  'inline-flex items-center gap-1.5',
+                  !isMobileLayout && 'group-hover/todo:hidden',
+                )}
+                title={`子任务进度 ${doneSubCount}/${todo.subtasks.length}`}
+              >
+                <span className="h-1 w-9 overflow-hidden rounded-full bg-muted">
+                  <span
+                    className="block h-full rounded-full bg-primary/60 transition-[width] duration-200"
+                    style={{ width: `${progressPct}%` }}
+                  />
+                </span>
+                <span className="text-[11px] font-medium text-muted-foreground tabular-nums">
+                  {progressPct}%
+                </span>
               </span>
             )}
-            <div className="todo-hover-actions">
-              <button
-                type="button"
-                className="mini-icon-btn"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setReminderTodoId(todo.id);
-                }}
-                title="设置提醒"
-                aria-label="设置提醒"
-              >
-                <AlarmIcon size={14} />
-              </button>
-              <button
-                type="button"
-                className="mini-icon-btn"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setEditingTodoId(todo.id);
-                }}
-                title="编辑详情"
-                aria-label="编辑详情"
-              >
-                <EditIcon size={13.5} />
-              </button>
-              <button
-                type="button"
-                className="mini-icon-btn danger"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  deleteTodo(todo.id);
-                }}
-                title="删除"
-                aria-label="删除"
-              >
-                <TrashIcon size={13.5} />
-              </button>
-            </div>
+
+            {dueLabel &&
+              (isOverdue ? (
+                <Badge
+                  className={cn(
+                    'h-5 rounded-md px-1.5 text-[11px] font-medium tabular-nums',
+                    !isMobileLayout && 'group-hover/todo:hidden',
+                  )}
+                  size="sm"
+                  variant="error"
+                >
+                  {dueLabel}
+                </Badge>
+              ) : (
+                <span
+                  className={cn(
+                    'text-[11.5px] font-medium text-muted-foreground tabular-nums',
+                    !isMobileLayout && 'group-hover/todo:hidden',
+                  )}
+                >
+                  {dueLabel}
+                </span>
+              ))}
+
+            {!isMobileLayout && (
+              <div className="hidden items-center gap-0.5 group-hover/todo:inline-flex">
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        aria-label="设置提醒"
+                        className="text-muted-foreground hover:text-foreground"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setReminderTodoId(todo.id);
+                        }}
+                        size="icon-xs"
+                        variant="ghost"
+                      />
+                    }
+                  >
+                    <AlarmClockIcon aria-hidden="true" strokeWidth={1.75} />
+                  </TooltipTrigger>
+                  <TooltipPopup side="top">设置提醒</TooltipPopup>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        aria-label="编辑详情"
+                        className="text-muted-foreground hover:text-foreground"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingTodoId(todo.id);
+                        }}
+                        size="icon-xs"
+                        variant="ghost"
+                      />
+                    }
+                  >
+                    <PencilIcon aria-hidden="true" strokeWidth={1.75} />
+                  </TooltipTrigger>
+                  <TooltipPopup side="top">编辑详情</TooltipPopup>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        aria-label="删除"
+                        className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive-foreground"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteTodo(todo.id);
+                        }}
+                        size="icon-xs"
+                        variant="ghost"
+                      />
+                    }
+                  >
+                    <Trash2Icon aria-hidden="true" strokeWidth={1.75} />
+                  </TooltipTrigger>
+                  <TooltipPopup side="top">删除</TooltipPopup>
+                </Tooltip>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Subtasks */}
+        {/* Clean Indented Subtasks */}
         {hasSubtasks && isExpanded && (
-          <div className="subtasks-list">
+          <div className="mt-2 flex flex-col gap-1.5 pl-10">
             {todo.subtasks.map((sub, sIdx) => (
               <div
                 key={sub.id}
-                className={`subtask-row${sub.completed ? ' completed' : ''}`}
+                className="flex items-start gap-2 text-xs leading-4.5"
               >
-                <button
-                  type="button"
-                  className={`todo-checkbox${sub.completed ? ' checked' : ''}`}
-                  onClick={() => toggleSubtask(todo.id, sub.id)}
-                  aria-label={sub.completed ? '取消完成子任务' : '完成子任务'}
-                >
-                  {sub.completed && <CheckIcon size={10} strokeWidth={2.6} />}
-                </button>
+                <div className="flex h-4.5 shrink-0 items-center">
+                  <Checkbox
+                    aria-label={sub.completed ? '取消完成子任务' : '完成子任务'}
+                    checked={sub.completed}
+                    className={cn(
+                      'size-3.5 rounded-[3.5px]',
+                      sub.completed && 'opacity-75',
+                    )}
+                    onCheckedChange={() => toggleSubtask(todo.id, sub.id)}
+                  />
+                </div>
                 {data.settings.autoNumbering && (
-                  <span className="todo-index-num" style={{ fontSize: '12.5px' }}>
+                  <span className="inline-flex h-4.5 shrink-0 items-center text-[11.5px] text-muted-foreground/80 tabular-nums">
                     {index + 1}.{sIdx + 1}
                   </span>
                 )}
                 <span
-                  className="subtask-title"
+                  className={cn(
+                    'min-w-0 flex-1 cursor-pointer break-words leading-4.5 transition-colors hover:text-foreground',
+                    sub.completed
+                      ? 'text-muted-foreground/75 line-through'
+                      : 'text-foreground/85',
+                  )}
                   onClick={() => setEditingTodoId(todo.id)}
-                  style={{ cursor: 'pointer' }}
                 >
                   {sub.title}
                 </span>
@@ -575,45 +751,59 @@ export const TodoView: React.FC<TodoViewProps> = ({ listIdOverride }) => {
   ];
 
   return (
-    <section className="todo-view" aria-label="待办视图">
+    <section
+      aria-label="待办视图"
+      className="flex min-h-0 flex-1 flex-col gap-3 px-4 pt-3 pb-3.5"
+    >
       {/* Scope Bar or Dedicated List Header */}
       {isDedicatedListTab && activeListObj ? (
-        <div className="todo-scope-bar">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span className="list-color-dot" style={{ background: activeListObj.color, width: 10, height: 10 }} />
-            <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>
+        <div className="flex shrink-0 items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <span
+              aria-hidden="true"
+              className="size-2.5 shrink-0 rounded-full"
+              style={{ backgroundColor: activeListObj.color }}
+            />
+            <span className="truncate text-[15px] font-semibold text-foreground">
               {activeListObj.name}
             </span>
-            <span className="section-count-badge">{incompleteTodos.length}</span>
+            <Badge className="tabular-nums" size="sm" variant="secondary">
+              {incompleteTodos.length}
+            </Badge>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <button
-              type="button"
-              className="btn btn-sm btn-outline"
+          <div className="flex shrink-0 items-center gap-1.5">
+            <Button
               onClick={() => toggleListPin(activeListObj.id)}
+              size="sm"
               title={activeListObj.pinnedToSide ? '取消固定到侧边页签' : '固定到侧边页签'}
+              variant={activeListObj.pinnedToSide ? 'secondary' : 'outline'}
             >
-              <PinIcon size={13} />
-              <span>{activeListObj.pinnedToSide ? '已固定' : '固定侧边'}</span>
-            </button>
-            <button
-              type="button"
-              className="quadrant-toggle-btn"
+              <PinIcon aria-hidden="true" className="size-3.5" strokeWidth={1.75} />
+              <span className="text-xs">{activeListObj.pinnedToSide ? '已固定' : '固定侧边'}</span>
+            </Button>
+            <Button
               onClick={() => setShowQuadrant(true)}
+              size="sm"
+              title="切换至四象限视图"
+              variant="outline"
             >
-              <QuadrantIcon size={14} />
-              <span>四象限</span>
-            </button>
+              <LayoutGridIcon aria-hidden="true" className="size-3.5" strokeWidth={1.75} />
+              <span className="text-xs">四象限</span>
+            </Button>
           </div>
         </div>
       ) : (
-        <div className="todo-scope-bar">
-          <div className="todo-scope-tabs">
+        <div className="flex shrink-0 items-center justify-between gap-2">
+          <SegmentedControl
+            className="min-w-0 max-w-full overflow-x-auto"
+            render={<div aria-label="待办时间范围" role="navigation" />}
+            size="sm"
+          >
             {scopeButtons.map((s) => (
-              <button
+              <SegmentedControlItem
                 key={s.id}
-                type="button"
-                className={`scope-pill-btn${todoScope === s.id ? ' active' : ''}`}
+                aria-current={todoScope === s.id ? 'page' : undefined}
+                className="px-2.5 aria-[current=page]:font-semibold aria-[current=page]:text-dt-accent-soft-text"
                 onClick={() => {
                   setTodoScope(s.id);
                   setSelectedListId(null);
@@ -621,92 +811,103 @@ export const TodoView: React.FC<TodoViewProps> = ({ listIdOverride }) => {
                 }}
               >
                 <span>{s.label}</span>
-                {s.dot && <span className="unscheduled-dot" title={`${unscheduledCount} 条待安排`} />}
-              </button>
+                {s.dot && (
+                  <span
+                    className="-mt-2 -ml-0.5 size-1.5 shrink-0 rounded-full bg-destructive"
+                    title={`${unscheduledCount} 条待安排`}
+                  />
+                )}
+              </SegmentedControlItem>
             ))}
 
-            {/* Lists Dropdown */}
-            <div className="list-dropdown-wrap">
-              <button
-                type="button"
-                className={`scope-pill-btn${todoScope === 'list' ? ' active' : ''}`}
-                onClick={() => setShowListMenu((v) => !v)}
+            {/* Lists Menu integrated into scope strip */}
+            <Menu onOpenChange={setShowListMenu} open={showListMenu}>
+              <MenuTrigger
+                render={
+                  <SegmentedControlItem
+                    aria-current={todoScope === 'list' ? 'page' : undefined}
+                    className="gap-1 px-2.5 aria-[current=page]:font-semibold aria-[current=page]:text-dt-accent-soft-text"
+                  />
+                }
               >
-                <span>{activeListObj ? activeListObj.name : '清单'}</span>
-                <ChevronDownIcon size={13} />
-              </button>
+                <span className="max-w-20 truncate">
+                  {activeListObj ? activeListObj.name : '清单'}
+                </span>
+                <ChevronDownIcon aria-hidden="true" className="size-3 opacity-75" strokeWidth={2} />
+              </MenuTrigger>
 
-              {showListMenu && (
-                <>
-                  <div className="popover-backdrop" onClick={() => setShowListMenu(false)} />
-                  <div className="list-dropdown-menu" role="menu">
-                    {activeLists.length === 0 ? (
-                      <div style={{ padding: '10px', fontSize: 12, color: 'var(--text-muted)' }}>
-                        暂无自定义清单
-                      </div>
-                    ) : (
-                      activeLists.map((list) => {
-                        const count = activeTodos.filter(
-                          (t) => !t.completed && t.listId === list.id,
-                        ).length;
-                        return (
-                          <button
-                            key={list.id}
-                            type="button"
-                            className="menu-item-btn"
-                            onClick={() => {
-                              setTodoScope('list');
-                              setSelectedListId(list.id);
-                              setShowListMenu(false);
-                            }}
-                          >
-                            <span className="list-color-dot" style={{ background: list.color }} />
-                            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                              {list.name}
-                            </span>
-                            <span className="menu-shortcut">{count}</span>
-                          </button>
-                        );
-                      })
-                    )}
-                    <div className="menu-divider" />
-                    <button
-                      type="button"
-                      className="menu-item-btn"
-                      onClick={() => {
-                        setShowListMenu(false);
-                        setShowListManager(true);
-                      }}
-                    >
-                      <ListIcon size={14} />
-                      <span>管理清单与侧边固定...</span>
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
+              <MenuPopup align="start" className="w-52" side="bottom" sideOffset={6}>
+                {activeLists.length === 0 ? (
+                  <div className="px-2.5 py-2 text-xs text-muted-foreground">暂无自定义清单</div>
+                ) : (
+                  <MenuGroup>
+                    {activeLists.map((list) => {
+                      const count = activeTodos.filter(
+                        (t) => !t.completed && t.listId === list.id,
+                      ).length;
+                      const isSelected = todoScope === 'list' && selectedListId === list.id;
+                      return (
+                        <MenuItem
+                          key={list.id}
+                          onClick={() => {
+                            setTodoScope('list');
+                            setSelectedListId(list.id);
+                            setShowListMenu(false);
+                          }}
+                        >
+                          <span
+                            aria-hidden="true"
+                            className="size-2 shrink-0 rounded-full"
+                            style={{ backgroundColor: list.color }}
+                          />
+                          <span className="flex-1 truncate">{list.name}</span>
+                          {isSelected && (
+                            <CheckIcon
+                              aria-hidden="true"
+                              className="size-3.5 text-dt-accent-soft-text"
+                              strokeWidth={2.25}
+                            />
+                          )}
+                          <MenuShortcut className="tabular-nums">{count}</MenuShortcut>
+                        </MenuItem>
+                      );
+                    })}
+                  </MenuGroup>
+                )}
+                <MenuSeparator />
+                <MenuGroup>
+                  <MenuItem
+                    onClick={() => {
+                      setShowListMenu(false);
+                      setShowListManager(true);
+                    }}
+                  >
+                    <ListTodoIcon aria-hidden="true" strokeWidth={1.75} />
+                    <span>管理清单与侧边固定…</span>
+                  </MenuItem>
+                </MenuGroup>
+              </MenuPopup>
+            </Menu>
+          </SegmentedControl>
 
-          <button
-            type="button"
-            className="quadrant-toggle-btn"
+          <Button
+            className="shrink-0 gap-1.5 text-xs"
             onClick={() => setShowQuadrant(true)}
+            size="sm"
             title="切换至四象限视图"
+            variant="outline"
           >
-            <QuadrantIcon size={14} />
+            <LayoutGridIcon aria-hidden="true" className="size-3.5" strokeWidth={1.75} />
             <span>四象限</span>
-          </button>
+          </Button>
         </div>
       )}
 
-      {/* Quick Create Input */}
-      <div className="quick-add-wrapper">
-        <div className="quick-add-box">
-          <textarea
-            ref={inputRef}
-            className="quick-add-textarea"
-            rows={1}
-            value={inputText}
+      {/* Quick Create InputGroup + Live NL Recognition Strip */}
+      <div className="relative shrink-0">
+        <InputGroup className="rounded-xl bg-card **:[textarea]:max-h-28 **:[textarea]:min-h-9 **:[textarea]:py-2 **:[textarea]:text-[var(--font-ui-size)] **:[textarea]:leading-5">
+          <InputGroupTextarea
+            aria-label="添加待办"
             onChange={(e) => {
               setInputText(e.target.value);
               if (nlDismissedFor && e.target.value !== nlDismissedFor) {
@@ -716,200 +917,246 @@ export const TodoView: React.FC<TodoViewProps> = ({ listIdOverride }) => {
             onKeyDown={handleInputKeyDown}
             onPaste={handleInputPaste}
             placeholder={placeholderText}
+            ref={inputRef}
+            rows={1}
+            value={inputText}
           />
-          <button
-            type="button"
-            className={`quick-add-send-btn${inputText.trim() ? ' ready' : ''}`}
-            onClick={() => handleSubmitTodo(true)}
-            title="创建待办 (Enter)"
-            aria-label="创建待办"
-          >
-            <SendIcon size={15} />
-          </button>
-        </div>
+          <InputGroupAddon align="inline-end" className="gap-1.5 pe-1.5 has-[>button]:me-0">
+            {!isMobileLayout && (
+              <Kbd
+                className="h-5.5 min-w-5.5 border border-border bg-muted/80 text-[11px]"
+                title="Enter 创建，Shift+Enter 换行"
+              >
+                ↵
+              </Kbd>
+            )}
+            <Button
+              aria-label="创建待办"
+              className={cn(
+                'size-7 rounded-md transition-opacity',
+                !inputText.trim() && 'opacity-75 hover:opacity-100',
+              )}
+              onClick={() => handleSubmitTodo(true)}
+              size="icon-xs"
+              title="创建待办 (Enter)"
+              variant="default"
+            >
+              <SendIcon aria-hidden="true" className="size-3.5" strokeWidth={1.85} />
+            </Button>
+          </InputGroupAddon>
+        </InputGroup>
 
         {/* Live Smart Natural-Language Recognition Popover */}
         {showNlPopover && nlParsed && (
-          <div className="nl-popover" role="region" aria-label="智能文本识别">
-            <div className="nl-popover-head">
-              <span className="nl-popover-head-left">
-                <SparklesIcon size={13.5} />
+          <div
+            aria-label="智能文本识别"
+            className="absolute inset-x-0 top-full z-30 mt-1.5 flex flex-col gap-2.5 rounded-xl border bg-popover not-dark:bg-clip-padding p-3 text-popover-foreground shadow-lg/5 before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-xl)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] dark:before:shadow-[0_-1px_--theme(--color-white/6%)]"
+            role="region"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                <SparklesIcon aria-hidden="true" className="size-3.5 text-dt-accent" strokeWidth={1.85} />
                 <span>已识别待办信息</span>
               </span>
-              <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+              <span className="min-w-0 truncate text-[11.5px] text-muted-foreground">
                 标题：{keepRawTitle ? nlParsed.rawTitle : nlParsed.cleanedTitle}
               </span>
             </div>
 
-            <div className="nl-chips-row">
+            <div className="flex flex-wrap gap-1.5">
               {nlParsed.matchedFields.map((field, idx) => (
-                <span key={`${field.kind}-${idx}`} className="nl-field-chip">
-                  <strong>{field.label}</strong> {field.value}
-                </span>
+                <Badge
+                  key={`${field.kind}-${idx}`}
+                  size="default"
+                  variant={getNlBadgeVariant(field.kind)}
+                >
+                  <span className="font-semibold">{field.label}</span>
+                  <span>{field.value}</span>
+                </Badge>
               ))}
             </div>
 
-            <div className="nl-popover-actions">
-              <label className="nl-keep-raw-label">
-                <input
-                  type="checkbox"
+            <div className="flex items-center justify-between gap-2 border-t border-border pt-2">
+              <label className="inline-flex cursor-pointer select-none items-center gap-2 text-xs text-muted-foreground hover:text-foreground">
+                <Checkbox
                   checked={keepRawTitle}
-                  onChange={(e) => setKeepRawTitle(e.target.checked)}
+                  className="size-3.5 rounded-[3.5px]"
+                  onCheckedChange={(checked) => setKeepRawTitle(Boolean(checked))}
                 />
                 <span>保留标题原文</span>
               </label>
 
-              <div className="nl-btn-group">
-                <button
-                  type="button"
-                  className="btn btn-sm btn-outline"
+              <div className="flex items-center gap-1.5">
+                <Button
                   onClick={() => setNlDismissedFor(inputText)}
+                  size="xs"
+                  variant="outline"
                 >
                   取消识别
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-sm btn-primary"
-                  onClick={() => handleSubmitTodo(true)}
-                >
+                </Button>
+                <Button onClick={() => handleSubmitTodo(true)} size="xs" variant="default">
                   确认采用
-                </button>
+                </Button>
               </div>
             </div>
           </div>
         )}
       </div>
 
-      {/* Grouped Todo List */}
-      <div className="todo-scroll-area">
-        {/* Incomplete Section */}
-        <div>
-          <button
-            type="button"
-            className="todo-section-header"
-            onClick={() => setIncompleteOpen((v) => !v)}
-          >
-            {incompleteOpen ? <ChevronDownIcon size={14} /> : <ChevronRightIcon size={14} />}
-            <span>未完成</span>
-            <span className="section-count-badge">{incompleteTodos.length}</span>
-          </button>
+      {/* Grouped Todo List inside ScrollArea with Concentric Frame + FramePanel */}
+      <ScrollArea className="-mx-4 min-h-0 flex-1 px-4" scrollFade>
+        <div className="flex flex-col gap-3 pb-2">
+          {/* Incomplete Section */}
+          <Frame>
+            <Collapsible onOpenChange={setIncompleteOpen} open={incompleteOpen}>
+              <div className="flex items-center justify-between gap-2 px-2.5 py-1.5">
+                <CollapsibleTrigger className="inline-flex cursor-pointer items-center gap-1.5 rounded-md px-0.5 py-0.5 text-xs font-semibold text-foreground/85 transition-colors outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">
+                  <ChevronDownIcon
+                    aria-hidden="true"
+                    className={cn(
+                      'size-3.5 text-muted-foreground transition-transform duration-150',
+                      !incompleteOpen && '-rotate-90',
+                    )}
+                    strokeWidth={2}
+                  />
+                  <span>未完成</span>
+                  <Badge
+                    className="h-4.5 min-w-5 rounded-md bg-card px-1.5 text-[11px] font-medium text-muted-foreground tabular-nums"
+                    size="sm"
+                    variant="outline"
+                  >
+                    {incompleteTodos.length}
+                  </Badge>
+                </CollapsibleTrigger>
 
-          {incompleteOpen && (
-            <div className="todo-group-list">
-              {incompleteTodos.length === 0 ? (
-                <div className="empty-hint-box" style={{ padding: '20px 12px' }}>
-                  {activeListObj
-                    ? `「${activeListObj.name}」暂无待办，在上方输入即可快速记录`
-                    : '这一时段暂无未完成待办，享受清爽专注时刻'}
+                <span className="text-[11px] text-muted-foreground/80">{sortLabel}</span>
+              </div>
+
+              <CollapsiblePanel>
+                <FramePanel className="overflow-hidden p-0">
+                  {incompleteTodos.length === 0 ? (
+                    <div className="px-4 py-8 text-center text-xs text-muted-foreground">
+                      {activeListObj
+                        ? `「${activeListObj.name}」暂无待办，在上方输入即可快速记录`
+                        : '这一时段暂无未完成待办，享受清爽专注时刻'}
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-border">
+                      {incompleteTodos.map((todo, idx) => renderTodoItem(todo, idx))}
+                    </div>
+                  )}
+                </FramePanel>
+              </CollapsiblePanel>
+            </Collapsible>
+          </Frame>
+
+          {/* Completed Section */}
+          {completedTodos.length > 0 && (
+            <Frame>
+              <Collapsible onOpenChange={setCompletedOpen} open={completedOpen}>
+                <div className="flex items-center justify-between gap-2 px-2.5 py-1.5">
+                  <CollapsibleTrigger className="inline-flex cursor-pointer items-center gap-1.5 rounded-md px-0.5 py-0.5 text-xs font-semibold text-foreground/85 transition-colors outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">
+                    <ChevronDownIcon
+                      aria-hidden="true"
+                      className={cn(
+                        'size-3.5 text-muted-foreground transition-transform duration-150',
+                        !completedOpen && '-rotate-90',
+                      )}
+                      strokeWidth={2}
+                    />
+                    <span>已完成</span>
+                    <Badge
+                      className="h-4.5 min-w-5 rounded-md bg-card px-1.5 text-[11px] font-medium text-muted-foreground tabular-nums"
+                      size="sm"
+                      variant="outline"
+                    >
+                      {completedTodos.length}
+                    </Badge>
+                  </CollapsibleTrigger>
                 </div>
-              ) : (
-                incompleteTodos.map((todo, idx) => renderTodoItem(todo, idx))
-              )}
+
+                <CollapsiblePanel>
+                  <FramePanel className="overflow-hidden p-0">
+                    <div className="divide-y divide-border">
+                      {completedTodos.map((todo, idx) => renderTodoItem(todo, idx))}
+                    </div>
+                  </FramePanel>
+                </CollapsiblePanel>
+              </Collapsible>
+            </Frame>
+          )}
+
+          {isDedicatedListTab && (
+            <div className="pt-1 text-center">
+              <Button
+                className="text-muted-foreground"
+                onClick={() => setActiveTab({ kind: 'todo' })}
+                size="xs"
+                variant="ghost"
+              >
+                返回全部待办
+              </Button>
             </div>
           )}
         </div>
+      </ScrollArea>
 
-        {/* Completed Section */}
-        {completedTodos.length > 0 && (
-          <div>
-            <button
-              type="button"
-              className="todo-section-header"
-              onClick={() => setCompletedOpen((v) => !v)}
-            >
-              {completedOpen ? <ChevronDownIcon size={14} /> : <ChevronRightIcon size={14} />}
-              <span>已完成</span>
-              <span className="section-count-badge">{completedTodos.length}</span>
-            </button>
+      {/* Batch Multi-line Paste coss Dialog */}
+      <Dialog
+        onOpenChange={(open) => {
+          if (!open) setBatchLines(null);
+        }}
+        open={Boolean(batchLines)}
+      >
+        <DialogPopup className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base">
+              检测到多行文本（{batchLines?.length ?? 0} 条）
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              选择要批量拆分为独立待办的条目（自动支持智能识别日期/标签）：
+            </DialogDescription>
+          </DialogHeader>
 
-            {completedOpen && (
-              <div className="todo-group-list">
-                {completedTodos.map((todo, idx) => renderTodoItem(todo, idx))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {isDedicatedListTab && (
-          <div style={{ marginTop: 8, textAlign: 'center' }}>
-            <button
-              type="button"
-              className="text-link-btn muted"
-              onClick={() => setActiveTab({ kind: 'todo' })}
-            >
-              返回全部待办
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Batch Multi-line Paste Modal */}
-      {batchLines && (
-        <div className="modal-overlay" onClick={() => setBatchLines(null)}>
-          <div className="modal-card" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="批量创建待办">
-            <div className="modal-header">
-              <h3 className="modal-title">检测到多行文本（{batchLines.length} 条）</h3>
-              <button
-                type="button"
-                className="header-icon-btn"
-                onClick={() => setBatchLines(null)}
-                aria-label="关闭"
-              >
-                <CloseIcon size={16} />
-              </button>
-            </div>
-            <div className="modal-body" style={{ gap: 8 }}>
-              <div style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>
-                选择要批量拆分为独立待办的条目（自动支持智能识别日期/标签）：
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 280, overflowY: 'auto' }}>
-                {batchLines.map((line, idx) => (
-                  <label
-                    key={`${idx}-${line.slice(0, 12)}`}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      padding: '6px 9px',
-                      borderRadius: 8,
-                      background: 'var(--bg-surface)',
-                      border: '1px solid var(--border)',
-                      fontSize: 13,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <input
-                      type="checkbox"
+          <DialogPanel className="max-h-72">
+            <div className="flex flex-col gap-1.5">
+              {(batchLines ?? []).map((line, idx) => (
+                <label
+                  key={`${idx}-${line.slice(0, 12)}`}
+                  className="flex cursor-pointer items-start gap-2.5 rounded-lg border bg-card px-3 py-2 text-sm text-foreground transition-colors hover:bg-accent/50"
+                >
+                  <div className="flex h-5 shrink-0 items-center">
+                    <Checkbox
                       checked={batchSelected[idx] ?? true}
-                      onChange={(e) =>
+                      onCheckedChange={(checked) =>
                         setBatchSelected((prev) =>
-                          prev.map((val, i) => (i === idx ? e.target.checked : val)),
+                          prev.map((val, i) => (i === idx ? Boolean(checked) : val)),
                         )
                       }
-                      style={{ accentColor: 'var(--accent)' }}
                     />
-                    <span style={{ flex: 1, wordBreak: 'break-word' }}>{line}</span>
-                  </label>
-                ))}
-              </div>
+                  </div>
+                  <span className="min-w-0 flex-1 break-words leading-5">{line}</span>
+                </label>
+              ))}
             </div>
-            <div className="modal-footer" style={{ justifyContent: 'space-between' }}>
-              <button type="button" className="btn btn-outline" onClick={handleMergeBatchAsSingle}>
-                合并为 1 条待办
-              </button>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button type="button" className="btn btn-outline" onClick={() => setBatchLines(null)}>
-                  取消
-                </button>
-                <button type="button" className="btn btn-primary" onClick={handleConfirmBatchCreate}>
-                  <PlusIcon size={14} />
-                  <span>批量创建 ({batchSelected.filter(Boolean).length})</span>
-                </button>
-              </div>
+          </DialogPanel>
+
+          <DialogFooter className="justify-between">
+            <Button onClick={handleMergeBatchAsSingle} size="sm" variant="outline">
+              合并为 1 条待办
+            </Button>
+            <div className="flex items-center gap-2">
+              <Button onClick={() => setBatchLines(null)} size="sm" variant="ghost">
+                取消
+              </Button>
+              <Button onClick={handleConfirmBatchCreate} size="sm" variant="default">
+                <PlusIcon aria-hidden="true" className="size-3.5" strokeWidth={2} />
+                <span>批量创建 ({batchSelected.filter(Boolean).length})</span>
+              </Button>
             </div>
-          </div>
-        </div>
-      )}
+          </DialogFooter>
+        </DialogPopup>
+      </Dialog>
     </section>
   );
 };
