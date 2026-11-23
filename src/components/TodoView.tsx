@@ -143,6 +143,15 @@ export const TodoView: React.FC<TodoViewProps> = ({ listIdOverride }) => {
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const touchStartRef = useRef<{ id: string; x: number; y: number } | null>(null);
 
+  // Subtle view settle on scope/list switch (skip initial mount to avoid double-stacking with App view entrance)
+  const listViewKey = effectiveListId ? `list:${effectiveListId}` : `scope:${todoScope}`;
+  const initialListKeyRef = useRef(listViewKey);
+  const hasSwitchedListRef = useRef(false);
+  if (listViewKey !== initialListKeyRef.current) {
+    hasSwitchedListRef.current = true;
+  }
+  const animateListSwitch = hasSwitchedListRef.current;
+
   // Focus input on global quick-add hotkey event
   useEffect(() => {
     if (quickAddFocusTrigger > 0) {
@@ -440,7 +449,7 @@ export const TodoView: React.FC<TodoViewProps> = ({ listIdOverride }) => {
       <div
         key={todo.id}
         className={cn(
-          'group/todo relative px-2.5 py-2.5 transition-colors hover:bg-accent/60',
+          'group/todo relative px-2.5 py-2.5 transition-[background-color,opacity] duration-[120ms] ease-[var(--dt-ease)] hover:bg-accent/60',
           todo.completed && 'opacity-72 hover:opacity-90',
         )}
         onTouchEnd={() => handleTouchEnd(todo.id)}
@@ -460,7 +469,7 @@ export const TodoView: React.FC<TodoViewProps> = ({ listIdOverride }) => {
               <button
                 aria-expanded={isExpanded}
                 aria-label={isExpanded ? '收起子任务' : '展开子任务'}
-                className="inline-flex size-4 cursor-pointer items-center justify-center rounded text-muted-foreground transition-colors outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                className="dt-pressable-icon inline-flex size-4 cursor-pointer items-center justify-center rounded text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
                 onClick={(e) => {
                   e.stopPropagation();
                   toggleExpand(todo.id);
@@ -470,7 +479,7 @@ export const TodoView: React.FC<TodoViewProps> = ({ listIdOverride }) => {
                 <ChevronDownIcon
                   aria-hidden="true"
                   className={cn(
-                    'size-3.5 transition-transform duration-150',
+                    'dt-chevron size-3.5',
                     !isExpanded && '-rotate-90',
                   )}
                   strokeWidth={2}
@@ -526,7 +535,7 @@ export const TodoView: React.FC<TodoViewProps> = ({ listIdOverride }) => {
               )}
               <span
                 className={cn(
-                  'min-w-0 flex-1 break-words text-[var(--font-body-size)] leading-5',
+                  'min-w-0 flex-1 break-words text-[var(--font-body-size)] leading-5 transition-colors duration-[120ms] ease-[var(--dt-ease)]',
                   todo.completed
                     ? 'font-normal text-muted-foreground line-through'
                     : 'font-medium text-foreground',
@@ -601,8 +610,8 @@ export const TodoView: React.FC<TodoViewProps> = ({ listIdOverride }) => {
               >
                 <span className="h-1 w-9 overflow-hidden rounded-full bg-muted">
                   <span
-                    className="block h-full rounded-full bg-primary/60 transition-[width] duration-200"
-                    style={{ width: `${progressPct}%` }}
+                    className="block h-full w-full origin-left rounded-full bg-primary/60 transition-transform duration-[150ms] ease-[var(--dt-ease)]"
+                    style={{ transform: `scaleX(${progressPct / 100})` }}
                   />
                 </span>
                 <span className="text-[11px] font-medium text-muted-foreground tabular-nums">
@@ -635,7 +644,7 @@ export const TodoView: React.FC<TodoViewProps> = ({ listIdOverride }) => {
               ))}
 
             {!isMobileLayout && (
-              <div className="hidden items-center gap-0.5 group-hover/todo:inline-flex">
+              <div className="dt-fade-in hidden items-center gap-0.5 group-hover/todo:inline-flex">
                 <Tooltip>
                   <TooltipTrigger
                     render={
@@ -702,7 +711,7 @@ export const TodoView: React.FC<TodoViewProps> = ({ listIdOverride }) => {
 
         {/* Clean Indented Subtasks */}
         {hasSubtasks && isExpanded && (
-          <div className="mt-2 flex flex-col gap-1.5 pl-10">
+          <div className="dt-reveal mt-2 flex flex-col gap-1.5 pl-10">
             {todo.subtasks.map((sub, sIdx) => (
               <div
                 key={sub.id}
@@ -833,7 +842,11 @@ export const TodoView: React.FC<TodoViewProps> = ({ listIdOverride }) => {
                 <span className="max-w-20 truncate">
                   {activeListObj ? activeListObj.name : '清单'}
                 </span>
-                <ChevronDownIcon aria-hidden="true" className="size-3 opacity-75" strokeWidth={2} />
+                <ChevronDownIcon
+                  aria-hidden="true"
+                  className={cn('dt-chevron size-3 opacity-75', showListMenu && 'rotate-180')}
+                  strokeWidth={2}
+                />
               </MenuTrigger>
 
               <MenuPopup align="start" className="w-52" side="bottom" sideOffset={6}>
@@ -950,7 +963,7 @@ export const TodoView: React.FC<TodoViewProps> = ({ listIdOverride }) => {
         {showNlPopover && nlParsed && (
           <div
             aria-label="智能文本识别"
-            className="absolute inset-x-0 top-full z-30 mt-1.5 flex flex-col gap-2.5 rounded-xl border bg-popover not-dark:bg-clip-padding p-3 text-popover-foreground shadow-lg/5 before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-xl)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] dark:before:shadow-[0_-1px_--theme(--color-white/6%)]"
+            className="dt-pop-in absolute inset-x-0 top-full z-30 mt-1.5 flex flex-col gap-2.5 rounded-xl border bg-popover not-dark:bg-clip-padding p-3 text-popover-foreground shadow-lg/5 before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-xl)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] dark:before:shadow-[0_-1px_--theme(--color-white/6%)]"
             role="region"
           >
             <div className="flex items-center justify-between gap-2">
@@ -1005,7 +1018,10 @@ export const TodoView: React.FC<TodoViewProps> = ({ listIdOverride }) => {
 
       {/* Grouped Todo List inside ScrollArea with Concentric Frame + FramePanel */}
       <ScrollArea className="-mx-4 min-h-0 flex-1 px-4" scrollFade>
-        <div className="flex flex-col gap-3 pb-2">
+        <div
+          key={listViewKey}
+          className={cn('flex flex-col gap-3 pb-2', animateListSwitch && 'dt-view-enter')}
+        >
           {/* Incomplete Section */}
           <Frame>
             <Collapsible onOpenChange={setIncompleteOpen} open={incompleteOpen}>
@@ -1014,7 +1030,7 @@ export const TodoView: React.FC<TodoViewProps> = ({ listIdOverride }) => {
                   <ChevronDownIcon
                     aria-hidden="true"
                     className={cn(
-                      'size-3.5 text-muted-foreground transition-transform duration-150',
+                      'dt-chevron size-3.5 text-muted-foreground',
                       !incompleteOpen && '-rotate-90',
                     )}
                     strokeWidth={2}
@@ -1059,7 +1075,7 @@ export const TodoView: React.FC<TodoViewProps> = ({ listIdOverride }) => {
                     <ChevronDownIcon
                       aria-hidden="true"
                       className={cn(
-                        'size-3.5 text-muted-foreground transition-transform duration-150',
+                        'dt-chevron size-3.5 text-muted-foreground',
                         !completedOpen && '-rotate-90',
                       )}
                       strokeWidth={2}

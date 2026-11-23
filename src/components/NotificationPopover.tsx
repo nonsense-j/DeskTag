@@ -128,7 +128,7 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
                   type="button"
                   onClick={() => handleClickItem(item.id, item.todoId)}
                   className={cn(
-                    'group flex w-full flex-col gap-1 rounded-lg border px-2.5 py-2 text-left transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                    'dt-pressable group flex w-full flex-col gap-1 rounded-lg border px-2.5 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring',
                     item.read
                       ? 'border-transparent bg-transparent hover:bg-accent'
                       : 'border-dt-accent-border/40 bg-dt-accent-soft/65 hover:bg-dt-accent-soft',
@@ -181,7 +181,7 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
         />
         <div
           aria-label="消息中心"
-          className="absolute top-12 right-3 z-50 w-[332px] max-w-[calc(100%-24px)] rounded-xl border bg-popover not-dark:bg-clip-padding p-3.5 text-popover-foreground shadow-lg/5 before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-xl)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] dark:before:shadow-[0_-1px_--theme(--color-white/6%)]"
+          className="dt-pop-in absolute top-12 right-3 z-50 w-[332px] max-w-[calc(100%-24px)] rounded-xl border bg-popover not-dark:bg-clip-padding p-3.5 text-popover-foreground shadow-lg/5 before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-xl)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] dark:before:shadow-[0_-1px_--theme(--color-white/6%)]"
           role="dialog"
         >
           {bodyContent}

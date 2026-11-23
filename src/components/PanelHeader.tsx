@@ -153,7 +153,7 @@ export const PanelHeader: React.FC<PanelHeaderProps> = ({ onOpenSettingsAbout })
             <TooltipTrigger
               render={
                 <Button
-                  className="rounded-full"
+                  className="dt-pop-in rounded-full"
                   onClick={navigateBack}
                   size="xs"
                   variant="outline"
@@ -182,7 +182,7 @@ export const PanelHeader: React.FC<PanelHeaderProps> = ({ onOpenSettingsAbout })
               render={
                 <button
                   aria-label="WebDAV 同步状态"
-                  className="inline-flex size-5 shrink-0 items-center justify-center rounded-full transition-colors outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+                  className="dt-pressable-icon inline-flex size-5 shrink-0 items-center justify-center rounded-full outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
                   onClick={() => void triggerWebdavSyncNow()}
                   type="button"
                 />

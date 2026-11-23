@@ -9,7 +9,7 @@ import {
   SlidersHorizontalIcon,
   Trash2Icon,
 } from 'lucide-react';
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -180,6 +180,15 @@ export const QuadrantView: React.FC<QuadrantViewProps> = ({ embedded = false }) 
   });
   const [draggedTodoId, setDraggedTodoId] = useState<string | null>(null);
   const [dragOverQuadrant, setDragOverQuadrant] = useState<QuadrantId | null>(null);
+
+  // Subtle list settle on scope/filter switch (skip initial mount to avoid double-stacking with App view entrance)
+  const matrixFilterKey = `${scope}:${listFilter}:${showCompleted}`;
+  const initialFilterKeyRef = useRef(matrixFilterKey);
+  const hasSwitchedFilterRef = useRef(false);
+  if (matrixFilterKey !== initialFilterKeyRef.current) {
+    hasSwitchedFilterRef.current = true;
+  }
+  const animateFilterSwitch = hasSwitchedFilterRef.current;
 
   const now = useMemo(() => new Date(), []);
   const todayKey = useMemo(() => getTodayKey(now), [now]);
@@ -532,8 +541,8 @@ export const QuadrantView: React.FC<QuadrantViewProps> = ({ embedded = false }) 
                 key={qMeta.id}
                 aria-label={qMeta.title}
                 className={cn(
-                  'min-h-0 transition-[background-color,box-shadow] duration-150',
-                  isDropTarget && 'bg-accent ring-2 ring-ring/40',
+                  'min-h-0 transition-[background-color,border-color,box-shadow] duration-[120ms] ease-[var(--dt-ease)]',
+                  isDropTarget && 'border-dt-accent/50 bg-dt-accent-soft/55 ring-2 ring-dt-accent/25',
                 )}
                 onDragLeave={(e) => {
                   if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
@@ -586,11 +595,23 @@ export const QuadrantView: React.FC<QuadrantViewProps> = ({ embedded = false }) 
                     scrollFade
                   >
                     {items.length === 0 ? (
-                      <div className="flex min-h-[110px] flex-1 flex-col items-center justify-center px-3 py-6 text-center text-muted-foreground/75 text-xs">
+                      <div
+                        key={matrixFilterKey}
+                        className={cn(
+                          'flex min-h-[110px] flex-1 flex-col items-center justify-center px-3 py-6 text-center text-muted-foreground/75 text-xs',
+                          animateFilterSwitch && 'dt-view-enter',
+                        )}
+                      >
                         <span>暂无待办 · 拖拽至此或下方添加</span>
                       </div>
                     ) : (
-                      <div className="divide-y divide-border/70">
+                      <div
+                        key={matrixFilterKey}
+                        className={cn(
+                          'divide-y divide-border/70',
+                          animateFilterSwitch && 'dt-view-enter',
+                        )}
+                      >
                         {items.map((todo) => {
                           const pDotClass = priorityDotClass(todo.priority);
                           const dueLabel = formatShortDueDate(todo.dueDate, todo.dueTime, now);
@@ -604,8 +625,8 @@ export const QuadrantView: React.FC<QuadrantViewProps> = ({ embedded = false }) 
                             <div
                               key={todo.id}
                               className={cn(
-                                'group relative flex cursor-grab flex-col gap-1.5 px-2.5 py-2 transition-colors hover:bg-accent/60 active:cursor-grabbing',
-                                draggedTodoId === todo.id && 'bg-accent opacity-55',
+                                'group relative flex cursor-grab flex-col gap-1.5 px-2.5 py-2 transition-[background-color,opacity,transform] duration-[120ms] ease-[var(--dt-ease)] hover:bg-accent/60 active:cursor-grabbing',
+                                draggedTodoId === todo.id && 'scale-[0.985] bg-accent opacity-50',
                               )}
                               draggable
                               onDragEnd={() => {
@@ -785,7 +806,7 @@ export const QuadrantView: React.FC<QuadrantViewProps> = ({ embedded = false }) 
                     {quickValue.trim().length > 0 && (
                       <Button
                         aria-label="确认添加"
-                        className="size-5.5 shrink-0"
+                        className="dt-pop-in size-5.5 shrink-0"
                         onClick={() => handleQuickAdd(qMeta)}
                         size="icon-xs"
                         variant="ghost"

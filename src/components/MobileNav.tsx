@@ -171,7 +171,7 @@ export const MobileBottomNav: React.FC = () => {
             key={id}
             aria-current={active ? 'page' : undefined}
             className={cn(
-              'group flex min-h-[56px] flex-col items-center justify-center gap-0.5 py-1.5 text-[11px] transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
+              'group flex min-h-[56px] flex-col items-center justify-center gap-0.5 py-1.5 text-[11px] transition-colors duration-[120ms] ease-[var(--dt-ease)] outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
               active
                 ? 'font-semibold text-dt-accent-soft-text'
                 : 'font-medium text-muted-foreground hover:text-foreground',
@@ -185,10 +185,10 @@ export const MobileBottomNav: React.FC = () => {
           >
             <span
               className={cn(
-                'relative inline-flex h-7 w-11 items-center justify-center rounded-full transition-colors',
+                'relative inline-flex h-7 w-11 items-center justify-center rounded-full transition-[background-color,color,transform] duration-[130ms] ease-[var(--dt-ease)] motion-safe:group-active:scale-[0.94] motion-safe:group-active:duration-[80ms]',
                 active
-                  ? 'bg-dt-accent-soft text-dt-accent-soft-text'
-                  : 'group-hover:bg-accent group-hover:text-foreground',
+                  ? 'bg-dt-accent-soft text-dt-accent-soft-text scale-100'
+                  : 'scale-95 group-hover:bg-accent group-hover:text-foreground group-hover:scale-100',
               )}
             >
               <Icon

@@ -1,0 +1,251 @@
+/* ==========================================================================
+   DeskTag Micro-Motion System
+   Restrained, snappy, low-RAM GPU micro-interactions aligned with motion.md:
+   - Never animate width, height, margin, or padding on layout flow elements
+   - Zero permanent will-change (browser promotes transiently during animation)
+   - No bounce, no overshoot; every curve settles crisply in <= 150ms
+   - Full prefers-reduced-motion: reduce support
+   ========================================================================== */
+
+:root {
+  /* Easing curves */
+  --dt-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --dt-ease-enter: cubic-bezier(0.22, 1, 0.36, 1);
+  --dt-ease-io: cubic-bezier(0.65, 0, 0.35, 1);
+
+  /* Snappy durations (WebView2 crisp pacing, nothing sluggish over 160ms) */
+  --dt-dur-fast: 80ms;
+  --dt-dur-close: 95ms;
+  --dt-dur-hover: 120ms;
+  --dt-dur-view: 135ms;
+  --dt-dur-panel: 145ms;
+  --dt-dur-indicator: 150ms;
+}
+
+/* --------------------------------------------------------------------------
+   GPU-Only Keyframes (transform + opacity only, zero overshoot)
+   -------------------------------------------------------------------------- */
+
+@keyframes dt-view-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 4px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes dt-reveal {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -3px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes dt-pop-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -3px, 0) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes dt-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes dt-slide-next {
+  from {
+    opacity: 0;
+    transform: translate3d(7px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes dt-slide-prev {
+  from {
+    opacity: 0;
+    transform: translate3d(-7px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes dt-check-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.72);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Reusable Micro-Motion Utility Classes
+   (backwards fill so completed animations drop transform stacking contexts)
+   -------------------------------------------------------------------------- */
+
+.dt-view-enter {
+  animation: dt-view-enter var(--dt-dur-view) var(--dt-ease-enter) backwards;
+}
+
+.dt-reveal {
+  animation: dt-reveal var(--dt-dur-hover) var(--dt-ease-enter) backwards;
+}
+
+.dt-pop-in {
+  animation: dt-pop-in var(--dt-dur-hover) var(--dt-ease-enter) backwards;
+}
+
+.dt-fade-in {
+  animation: dt-fade-in 100ms var(--dt-ease) backwards;
+}
+
+.dt-slide-next {
+  animation: dt-slide-next var(--dt-dur-view) var(--dt-ease-enter) backwards;
+}
+
+.dt-slide-prev {
+  animation: dt-slide-prev var(--dt-dur-view) var(--dt-ease-enter) backwards;
+}
+
+.dt-check-pop {
+  animation: dt-check-pop var(--dt-dur-view) var(--dt-ease-enter) backwards;
+}
+
+.dt-chevron {
+  transition: transform 130ms var(--dt-ease);
+}
+
+.dt-pressable {
+  transition-property: color, background-color, border-color, box-shadow, opacity, transform;
+  transition-duration: var(--dt-dur-hover);
+  transition-timing-function: var(--dt-ease);
+}
+
+.dt-pressable:active:not(:disabled):not([aria-disabled='true']):not([data-disabled]) {
+  transform: scale(0.985);
+  transition-duration: var(--dt-dur-fast);
+}
+
+.dt-pressable-icon {
+  transition-property: color, background-color, border-color, box-shadow, opacity, transform;
+  transition-duration: var(--dt-dur-hover);
+  transition-timing-function: var(--dt-ease);
+}
+
+.dt-pressable-icon:active:not(:disabled):not([aria-disabled='true']):not([data-disabled]) {
+  transform: scale(0.94);
+  transition-duration: var(--dt-dur-fast);
+}
+
+/* Subtle fine-pointer card lift (-1.5px) + shadow refinement, zero layout shift */
+.dt-card-lift {
+  transition:
+    transform 130ms var(--dt-ease),
+    border-color 130ms var(--dt-ease),
+    background-color 130ms var(--dt-ease),
+    box-shadow 130ms var(--dt-ease);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .dt-card-lift:hover {
+    transform: translate3d(0, -1.5px, 0);
+    box-shadow:
+      0 6px 18px -6px rgba(0, 0, 0, 0.09),
+      0 1px 2px rgba(0, 0, 0, 0.04);
+  }
+
+  .dark .dt-card-lift:hover {
+    box-shadow:
+      0 8px 20px -6px rgba(0, 0, 0, 0.36),
+      0 1px 2px rgba(0, 0, 0, 0.22);
+  }
+}
+
+.dt-card-lift:active:not(:has(button:active)) {
+  transform: translate3d(0, 0, 0) scale(0.992);
+  transition-duration: var(--dt-dur-fast);
+}
+
+/* --------------------------------------------------------------------------
+   Reduced Motion: collapse spatial motion while preserving crisp state tones
+   -------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .dt-view-enter,
+  .dt-reveal,
+  .dt-pop-in,
+  .dt-fade-in,
+  .dt-slide-next,
+  .dt-slide-prev,
+  .dt-check-pop {
+    animation: none !important;
+  }
+
+  .dt-chevron {
+    transition: none !important;
+  }
+
+  .dt-pressable,
+  .dt-pressable-icon,
+  .dt-card-lift {
+    transition-property: color, background-color, border-color, box-shadow, opacity !important;
+    transition-duration: 100ms !important;
+  }
+
+  .dt-pressable:active,
+  .dt-pressable-icon:active,
+  .dt-card-lift:hover,
+  .dt-card-lift:active {
+    transform: none !important;
+  }
+
+  /* Keep Base UI popups readable with opacity-only fade; never touch positioner transforms */
+  [data-slot='dialog-popup'],
+  [data-slot='alert-dialog-popup'],
+  [data-slot='command-dialog-popup'],
+  [data-slot='popover-popup'],
+  [data-slot='menu-popup'],
+  [data-slot='context-menu-popup'],
+  [data-slot='select-popup'],
+  [data-slot='tooltip-popup'],
+  [data-slot='toast-popup'] {
+    transition-property: opacity !important;
+    transition-duration: 100ms !important;
+  }
+
+  [data-slot='drawer-popup'],
+  [data-slot='drawer-backdrop'] {
+    transition-duration: 100ms !important;
+  }
+
+  [data-slot='tab-indicator'],
+  [data-slot='segmented-control-indicator'],
+  [data-slot='switch-thumb'],
+  [data-slot='collapsible-panel'],
+  [data-slot='slider-thumb'] {
+    transition: none !important;
+  }
+}

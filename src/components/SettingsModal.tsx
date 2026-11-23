@@ -136,7 +136,7 @@ function formatBytes(bytes: number): string {
 function getFallbackAppVersion(): string {
   return typeof __APP_VERSION__ === 'string' && __APP_VERSION__.trim()
     ? __APP_VERSION__
-    : '1.3.0';
+    : '1.3.1';
 }
 
 function formatInstallKindLabel(kind: InstallKind): string {
@@ -247,6 +247,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ inline = false, in
   const activeTab: SettingsTabId = tabs.some((t) => t.id === settingsTab)
     ? settingsTab
     : 'general';
+
+  // Animate tab content transitions only after user switches tabs (avoid stacking on modal open)
+  const initialTabRef = useRef<SettingsTabId>(activeTab);
+  const hasSwitchedTabRef = useRef(false);
+  if (activeTab !== initialTabRef.current) {
+    hasSwitchedTabRef.current = true;
+  }
+  const animateTabPanel = hasSwitchedTabRef.current;
 
   // Backup & storage state
   const [includeData, setIncludeData] = useState(true);
@@ -517,7 +525,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ inline = false, in
           {/* =============================================================== */}
           {/* TAB 1: 通用 (General)                                           */}
           {/* =============================================================== */}
-          <TabsPanel value="general" className="flex flex-col gap-3 p-3.5 pb-5">
+          <TabsPanel
+            value="general"
+            className={cn('flex flex-col gap-3 p-3.5 pb-5', animateTabPanel && 'dt-view-enter')}
+          >
             <Frame>
               <FramePanel className="flex flex-col gap-3 p-3.5">
                 {!hideDesktopOnly && (
@@ -610,7 +621,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ inline = false, in
                   </div>
 
                   {settings.dndEnabled && (
-                    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-coss-frame-well px-3 py-2">
+                    <div className="dt-reveal flex flex-wrap items-center gap-2 rounded-lg border border-border bg-coss-frame-well px-3 py-2">
                       <span className="text-xs font-medium text-muted-foreground">静默时间</span>
                       <Input
                         size="sm"
@@ -671,7 +682,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ inline = false, in
           {/* TAB 2: 面板 (Panel Settings — Desktop Only)                     */}
           {/* =============================================================== */}
           {!hideDesktopOnly && (
-            <TabsPanel value="panel" className="flex flex-col gap-3 p-3.5 pb-5">
+            <TabsPanel
+              value="panel"
+              className={cn('flex flex-col gap-3 p-3.5 pb-5', animateTabPanel && 'dt-view-enter')}
+            >
               {/* Dock & Tab Rail Card */}
               <CardFrame>
                 <CardFrameHeader className="py-2.5 px-3.5">
@@ -906,7 +920,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ inline = false, in
           {/* =============================================================== */}
           {/* TAB 3: 外观 (Personalization)                                   */}
           {/* =============================================================== */}
-          <TabsPanel value="personalize" className="flex flex-col gap-3 p-3.5 pb-5">
+          <TabsPanel
+            value="personalize"
+            className={cn('flex flex-col gap-3 p-3.5 pb-5', animateTabPanel && 'dt-view-enter')}
+          >
             {/* Theme Skins Grid + Opacity */}
             <CardFrame>
               <CardFrameHeader className="items-center py-2.5 px-3.5">
@@ -928,18 +945,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ inline = false, in
                           type="button"
                           onClick={() => updateSyncedSettings({ skinId: skin.id })}
                           className={cn(
-                            'group relative flex cursor-pointer items-center gap-2 rounded-xl border px-2.5 py-2 text-left transition-all outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                            'dt-pressable group relative flex cursor-pointer items-center gap-2 rounded-xl border px-2.5 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring',
                             active
-                              ? 'border-primary bg-accent text-foreground shadow-xs/5 ring-1 ring-primary/20'
-                              : 'border-border bg-card text-foreground/85 hover:bg-accent/60 hover:text-foreground',
+                              ? 'border-primary bg-accent text-foreground shadow-xs/5 ring-1 ring-primary/25'
+                              : 'border-border bg-card text-foreground/85 hover:border-ring/40 hover:bg-accent/60 hover:text-foreground',
                           )}
                         >
-                          <SkinSwatchTile swatch={skin.swatch} size={24} />
+                          <span className="inline-flex shrink-0 transition-transform duration-[120ms] ease-[var(--dt-ease)] group-hover:scale-[1.04]">
+                            <SkinSwatchTile swatch={skin.swatch} size={24} />
+                          </span>
                           <span className="min-w-0 flex-1 truncate text-xs font-medium">
                             {skin.name}
                           </span>
                           {active && (
-                            <Check className="size-3.5 shrink-0 text-primary" aria-hidden="true" />
+                            <Check
+                              className="dt-check-pop size-3.5 shrink-0 text-primary"
+                              aria-hidden="true"
+                            />
                           )}
                         </button>
                       );
@@ -1146,7 +1168,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ inline = false, in
           {/* TAB 4: 快捷键 (Shortcuts — Desktop Only)                         */}
           {/* =============================================================== */}
           {!hideDesktopOnly && (
-            <TabsPanel value="shortcuts" className="flex flex-col gap-3 p-3.5 pb-5">
+            <TabsPanel
+              value="shortcuts"
+              className={cn('flex flex-col gap-3 p-3.5 pb-5', animateTabPanel && 'dt-view-enter')}
+            >
               <CardFrame>
                 <CardFrameHeader className="py-2.5 px-3.5">
                   <CardFrameTitle className="text-[13px]">全局快捷键</CardFrameTitle>
@@ -1241,7 +1266,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ inline = false, in
           {/* =============================================================== */}
           {/* TAB 5: 同步 (Data & Sync + WebDAV)                              */}
           {/* =============================================================== */}
-          <TabsPanel value="data" className="flex flex-col gap-3 p-3.5 pb-5">
+          <TabsPanel
+            value="data"
+            className={cn('flex flex-col gap-3 p-3.5 pb-5', animateTabPanel && 'dt-view-enter')}
+          >
             {/* Card 1: WebDAV Cloud Sync */}
             <WebDavSyncCard
               externalStatus={webdavStatus}
@@ -1320,7 +1348,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ inline = false, in
                         <span>其他格式导出</span>
                         <ChevronDown
                           className={cn(
-                            'size-3.5 transition-transform duration-150',
+                            'dt-chevron size-3.5',
                             showOtherExports && 'rotate-180',
                           )}
                         />
@@ -1369,7 +1397,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ inline = false, in
                     </div>
 
                     {editingStorageDir && (
-                      <div className="flex items-center gap-1.5">
+                      <div className="dt-reveal flex items-center gap-1.5">
                         <Input
                           size="sm"
                           type="text"
@@ -1431,7 +1459,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ inline = false, in
           {/* =============================================================== */}
           {/* TAB 6: 关于 (About)                                             */}
           {/* =============================================================== */}
-          <TabsPanel value="about" className="flex flex-col gap-3 p-3.5 pb-5">
+          <TabsPanel
+            value="about"
+            className={cn('flex flex-col gap-3 p-3.5 pb-5', animateTabPanel && 'dt-view-enter')}
+          >
             {/* Card 1: Software Identity */}
             <Frame>
               <FramePanel className="flex flex-col gap-3 p-3.5">

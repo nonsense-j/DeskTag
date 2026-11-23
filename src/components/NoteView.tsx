@@ -1652,7 +1652,7 @@ export const NoteView: React.FC<NoteViewProps> = ({ noteId, standalone = false }
 
       {/* Formatting Toolbar (when 'A' is active in normal mode) */}
       {note.kind === 'normal' && showFormatBar && (
-        <div className="flex shrink-0 flex-wrap items-center gap-1 border-b bg-coss-frame-well px-3.5 py-1.5">
+        <div className="dt-reveal flex shrink-0 flex-wrap items-center gap-1 border-b bg-coss-frame-well px-3.5 py-1.5">
           {(
             [
               ['h1', 'H1', Heading1Icon, 1],
@@ -2200,7 +2200,7 @@ export const NoteView: React.FC<NoteViewProps> = ({ noteId, standalone = false }
                       title={h.text}
                       onClick={() => scrollToHeading(h.id)}
                       className={cn(
-                        'h-[2.5px] cursor-pointer rounded-full border-none p-0 transition-all duration-150',
+                        'h-[2.5px] cursor-pointer rounded-full border-none p-0 transition-[background-color,opacity,transform] duration-[120ms] ease-[var(--dt-ease)]',
                         widthClass,
                         active
                           ? 'bg-foreground/80'
@@ -2212,7 +2212,7 @@ export const NoteView: React.FC<NoteViewProps> = ({ noteId, standalone = false }
               </div>
 
               {outlineHover && (
-                <div className="mt-1 flex max-h-64 w-46 flex-col gap-0.5 overflow-y-auto rounded-lg border bg-popover p-1.5 text-popover-foreground shadow-lg/5">
+                <div className="dt-pop-in mt-1 flex max-h-64 w-46 flex-col gap-0.5 overflow-y-auto rounded-lg border bg-popover p-1.5 text-popover-foreground shadow-lg/5">
                   <div className="px-2 py-1 font-medium text-[11px] text-muted-foreground">
                     文档大纲
                   </div>
@@ -2341,7 +2341,7 @@ export const NoteView: React.FC<NoteViewProps> = ({ noteId, standalone = false }
                       </div>
 
                       {/* Concentric Entry Card */}
-                      <Card className="min-w-0 flex-1 gap-2 rounded-xl p-3 before:rounded-[calc(var(--radius-xl)-1px)]">
+                      <Card className="min-w-0 flex-1 gap-2 rounded-xl p-3 transition-[border-color,box-shadow] duration-[120ms] ease-[var(--dt-ease)] before:rounded-[calc(var(--radius-xl)-1px)] hover:border-ring/35">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <Badge
                             variant="secondary"

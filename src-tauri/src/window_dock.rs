@@ -1,13 +1,9 @@
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 use std::collections::HashSet;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
-use std::sync::atomic::AtomicU64;
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
-use std::sync::{Arc, Mutex};
-use std::sync::RwLock;
-#[cfg(any(target_os = "android", target_os = "ios"))]
-use std::sync::Arc;
+use std::sync::Mutex;
+use std::sync::{Arc, RwLock};
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 use std::time::{Duration, Instant};
 
@@ -24,10 +20,20 @@ pub const DEFAULT_PANEL_WIDTH: u32 = 480;
 pub const DEFAULT_PANEL_HEIGHT: u32 = 680;
 pub const DEFAULT_TAB_WIDTH: u32 = 64;
 pub const TOP_TAB_HEIGHT: u32 = 40;
+pub const DOCK_TRANSITION_EVENT: &str = "desktag://dock-transition";
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+const COLLAPSE_ANIM_MS: u64 = 160;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 const MIN_PANEL_WIDTH: f64 = 360.0;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 const MIN_PANEL_HEIGHT: f64 = 460.0;
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DockTransitionEvent {
+    pub phase: &'static str, // "expanding" | "collapsing" | "idle"
+    pub mode: DockMode,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PhysicalRect {
@@ -55,6 +61,18 @@ fn effective_tab_width(device: &DeviceSettings) -> u32 {
 /// Compute expanded physical window rectangle for any of the 6 DeskTag edge-docking modes,
 /// clamped cleanly inside `work` (the active monitor's WorkArea).
 pub fn compute_expanded_rect(device: &DeviceSettings, work: &WorkAreaRect) -> PhysicalRect {
+    compute_expanded_rect_with_anchor(device, work, None, None)
+}
+
+/// Compute expanded physical window rectangle while optionally anchoring to the current
+/// collapsed strip position (`anchor_y` for Right/Left dock modes, `anchor_x` for Top dock modes)
+/// so expanding preserves exact cross-axis continuity (`ΔY = 0` / `ΔX = 0`) within `work`.
+pub fn compute_expanded_rect_with_anchor(
+    device: &DeviceSettings,
+    work: &WorkAreaRect,
+    anchor_x: Option<i32>,
+    anchor_y: Option<i32>,
+) -> PhysicalRect {
     let scale = work.scale_factor.max(0.5);
     let tab_w = effective_tab_width(device);
     let panel_w = device.panel_width.clamp(340, 1200);
@@ -77,23 +95,23 @@ pub fn compute_expanded_rect(device: &DeviceSettings, work: &WorkAreaRect) -> Ph
     let (x, y) = match device.dock_mode {
         DockMode::RightTabs | DockMode::RightHide => {
             let x = work.right - phys_w;
-            let y = device
-                .panel_y
+            let y = anchor_y
+                .or(device.panel_y)
                 .unwrap_or(default_y)
                 .clamp(work.top, (work.bottom - phys_h).max(work.top));
             (x, y)
         }
         DockMode::LeftTabs | DockMode::LeftHide => {
             let x = work.left;
-            let y = device
-                .panel_y
+            let y = anchor_y
+                .or(device.panel_y)
                 .unwrap_or(default_y)
                 .clamp(work.top, (work.bottom - phys_h).max(work.top));
             (x, y)
         }
         DockMode::TopTabs | DockMode::TopHide => {
-            let x = device
-                .panel_x
+            let x = anchor_x
+                .or(device.panel_x)
                 .unwrap_or(default_x)
                 .clamp(work.left, (work.right - phys_w).max(work.left));
             let y = work.top;
@@ -216,6 +234,8 @@ pub struct DockController {
     last_expand_at: Mutex<Instant>,
     auto_hide_paused: AtomicBool,
     hidden_to_tray: AtomicBool,
+    collapse_anim_gen: Arc<AtomicU64>,
+    collapsing: Arc<AtomicBool>,
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     geometry_gen: AtomicU64,
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -241,6 +261,8 @@ impl DockController {
             last_expand_at: Mutex::new(Instant::now()),
             auto_hide_paused: AtomicBool::new(false),
             hidden_to_tray: AtomicBool::new(false),
+            collapse_anim_gen: Arc::new(AtomicU64::new(0)),
+            collapsing: Arc::new(AtomicBool::new(false)),
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             geometry_gen: AtomicU64::new(0),
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -252,6 +274,20 @@ impl DockController {
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             watcher_notify: Arc::new(Notify::new()),
         }
+    }
+
+    pub fn is_collapsing(&self) -> bool {
+        self.collapsing.load(Ordering::SeqCst)
+    }
+
+    fn bump_collapse_anim_gen(&self) -> u64 {
+        self.collapse_anim_gen.fetch_add(1, Ordering::SeqCst) + 1
+    }
+
+    /// Cancel any in-flight slide-out collapse animation and return whether one was active.
+    fn cancel_collapse_animation(&self) -> bool {
+        self.bump_collapse_anim_gen();
+        self.collapsing.swap(false, Ordering::SeqCst)
     }
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -271,7 +307,7 @@ impl DockController {
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     fn watcher_needs_polling(&self) -> bool {
-        if self.hidden_to_tray.load(Ordering::SeqCst) {
+        if self.hidden_to_tray.load(Ordering::SeqCst) || self.is_collapsing() {
             return false;
         }
         let st = self.get_state();
@@ -320,6 +356,10 @@ impl DockController {
         let _ = app.emit("desktag://dock-state", state);
     }
 
+    fn emit_dock_transition(&self, app: &AppHandle, phase: &'static str, mode: DockMode) {
+        let _ = app.emit(DOCK_TRANSITION_EVENT, DockTransitionEvent { phase, mode });
+    }
+
     pub fn set_auto_hide_paused(&self, paused: bool) {
         self.auto_hide_paused.store(paused, Ordering::SeqCst);
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -329,14 +369,15 @@ impl DockController {
     /// Apply initial docked position, size, and always-on-top state on desktop startup.
     pub fn apply_initial_layout(&self, app: &AppHandle, device: &DeviceSettings) {
         self.update_device_cache(device);
-        let mut next = self.get_state();
-        next.mode = device.dock_mode;
-        next.auto_hide = device.auto_hide;
-        next.always_on_top = device.always_on_top;
-        next.collapsed = false;
-        if let Ok(mut guard) = self.state.write() {
-            *guard = next.clone();
-        }
+        let next = {
+            let mut guard = self.state.write().unwrap_or_else(|e| e.into_inner());
+            self.cancel_collapse_animation();
+            guard.mode = device.dock_mode;
+            guard.auto_hide = device.auto_hide;
+            guard.always_on_top = device.always_on_top;
+            guard.collapsed = false;
+            guard.clone()
+        };
 
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         {
@@ -355,6 +396,7 @@ impl DockController {
             self.notify_watcher();
         }
 
+        self.emit_dock_transition(app, "idle", next.mode);
         self.emit_dock_state(app, &next);
     }
 
@@ -362,17 +404,23 @@ impl DockController {
         let prev_device = self.current_device();
         self.update_device_cache(device);
 
-        let mut next = self.get_state();
-        let mode_changed = next.mode != device.dock_mode;
         let size_changed = prev_device.panel_width != device.panel_width
             || prev_device.panel_height != device.panel_height
             || prev_device.uniform_tab_width != device.uniform_tab_width;
-        next.mode = device.dock_mode;
-        next.auto_hide = device.auto_hide;
-        next.always_on_top = device.always_on_top;
-        if let Ok(mut guard) = self.state.write() {
-            *guard = next.clone();
-        }
+
+        let (mode_changed, was_collapsing, next) = {
+            let mut guard = self.state.write().unwrap_or_else(|e| e.into_inner());
+            let mode_changed = guard.mode != device.dock_mode;
+            let was_collapsing = if mode_changed || size_changed {
+                self.cancel_collapse_animation()
+            } else {
+                false
+            };
+            guard.mode = device.dock_mode;
+            guard.auto_hide = device.auto_hide;
+            guard.always_on_top = device.always_on_top;
+            (mode_changed, was_collapsing, guard.clone())
+        };
 
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         {
@@ -391,6 +439,9 @@ impl DockController {
         #[cfg(any(target_os = "android", target_os = "ios"))]
         let _ = (mode_changed, size_changed);
 
+        if was_collapsing {
+            self.emit_dock_transition(app, "idle", next.mode);
+        }
         self.emit_dock_state(app, &next);
         next
     }
@@ -400,14 +451,15 @@ impl DockController {
         device.dock_mode = mode;
         self.update_device_cache(&device);
 
-        let mut next = self.get_state();
-        next.mode = mode;
-        // Expanding when switching docking mode gives immediate visual feedback at the new edge.
-        next.collapsed = false;
-        self.hidden_to_tray.store(false, Ordering::SeqCst);
-        if let Ok(mut guard) = self.state.write() {
-            *guard = next.clone();
-        }
+        let (was_collapsing, next) = {
+            let mut guard = self.state.write().unwrap_or_else(|e| e.into_inner());
+            let was_collapsing = self.cancel_collapse_animation();
+            guard.mode = mode;
+            // Expanding when switching docking mode gives immediate visual feedback at the new edge.
+            guard.collapsed = false;
+            self.hidden_to_tray.store(false, Ordering::SeqCst);
+            (was_collapsing, guard.clone())
+        };
 
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         {
@@ -427,6 +479,9 @@ impl DockController {
                 *t = Instant::now();
             }
             self.notify_watcher();
+        }
+        if was_collapsing {
+            self.emit_dock_transition(app, "idle", next.mode);
         }
         self.emit_dock_state(app, &next);
         next
@@ -473,12 +528,21 @@ impl DockController {
 
     pub fn expand(&self, app: &AppHandle) -> DockState {
         let device = self.current_device();
-        let mut next = self.get_state();
-        next.collapsed = false;
-        self.hidden_to_tray.store(false, Ordering::SeqCst);
-        if let Ok(mut guard) = self.state.write() {
-            *guard = next.clone();
-        }
+        let (was_collapsed, was_collapsing, was_hidden_to_tray, next) = {
+            let mut guard = self.state.write().unwrap_or_else(|e| e.into_inner());
+            let was_collapsed = guard.collapsed;
+            let was_collapsing = self.cancel_collapse_animation();
+            let was_hidden_to_tray = self.hidden_to_tray.swap(false, Ordering::SeqCst);
+            guard.collapsed = false;
+            (
+                was_collapsed,
+                was_collapsing,
+                was_hidden_to_tray,
+                guard.clone(),
+            )
+        };
+
+        let should_animate_expand = was_collapsed || was_collapsing || was_hidden_to_tray;
 
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         {
@@ -495,10 +559,26 @@ impl DockController {
                     crate::platform_win::resume_webview(&win);
                 }
 
-                if let Some(work) = self.resolve_work_area_for_window(&win) {
-                    self.store_work_area(work.clone());
-                    let rect = compute_expanded_rect(&device, &work);
-                    self.apply_window_rect(&win, rect, true);
+                // When reversing mid-collapse (`was_collapsing && !was_collapsed && !was_hidden_to_tray`),
+                // the OS window is STILL at full expanded geometry — skip resize/reposition completely.
+                if was_collapsed || was_hidden_to_tray {
+                    let anchor_pos = if was_collapsed && !is_full_hide_mode(next.mode) {
+                        win.outer_position()
+                            .ok()
+                            .filter(|p| p.x > -16_000 && p.y > -16_000)
+                    } else {
+                        None
+                    };
+                    if let Some(work) = self.resolve_work_area_for_window(&win) {
+                        self.store_work_area(work.clone());
+                        let rect = compute_expanded_rect_with_anchor(
+                            &device,
+                            &work,
+                            anchor_pos.map(|p| p.x),
+                            anchor_pos.map(|p| p.y),
+                        );
+                        self.apply_window_rect(&win, rect, true);
+                    }
                 }
                 let _ = win.show();
                 let _ = win.unminimize();
@@ -509,72 +589,144 @@ impl DockController {
         #[cfg(any(target_os = "android", target_os = "ios"))]
         let _ = device;
 
+        if should_animate_expand {
+            self.emit_dock_transition(app, "expanding", next.mode);
+        }
         self.emit_dock_state(app, &next);
         next
     }
 
-    pub fn collapse(&self, app: &AppHandle) -> DockState {
-        let device = self.current_device();
-        let mut next = self.get_state();
-        next.collapsed = true;
-        if let Ok(mut guard) = self.state.write() {
-            *guard = next.clone();
-        }
-
+    pub fn collapse(self: &Arc<Self>, app: &AppHandle) -> DockState {
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         {
-            use tauri::Manager;
-            self.bump_blur_low_gen();
-            if let Some(win) = app.get_webview_window("main") {
-                let full_hide = is_full_hide_mode(next.mode);
-                if let Some(work) = self.resolve_work_area_for_window(&win) {
-                    self.store_work_area(work.clone());
-                    if full_hide {
-                        let _ = win.hide();
-                    } else {
-                        let pos = win.outer_position().ok();
-                        let rect = compute_collapsed_tabs_rect(
-                            &device,
-                            &work,
-                            pos.map(|p| p.x),
-                            pos.map(|p| p.y),
-                        );
-                        #[cfg(target_os = "windows")]
-                        crate::platform_win::set_window_no_activate(&win, true);
-                        self.apply_window_rect(&win, rect, false);
-                    }
-                } else if full_hide {
-                    let _ = win.hide();
+            let (current, gen) = {
+                let guard = self.state.read().unwrap_or_else(|e| e.into_inner());
+                if guard.collapsed
+                    || self.hidden_to_tray.load(Ordering::SeqCst)
+                    || self
+                        .collapsing
+                        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                        .is_err()
+                {
+                    return guard.clone();
                 }
+                let gen = self.bump_collapse_anim_gen();
+                (guard.clone(), gen)
+            };
 
-                #[cfg(target_os = "windows")]
-                if full_hide {
-                    let trim_gen = self.bump_hide_trim_gen();
-                    crate::platform_win::suspend_webview(&win);
-                    crate::platform_win::schedule_hidden_trim(
-                        app.clone(),
-                        trim_gen,
-                        Arc::clone(&self.hide_trim_gen),
-                    );
-                } else {
-                    // Protruding tabs remain visible -> lower cache target without suspending.
-                    crate::platform_win::set_memory_usage_low(&win);
-                }
-            }
+            // Emit collapsing phase immediately while keeping `collapsed: false` so the frontend
+            // plays the 155ms GPU slide-out back to the docked edge before OS window trimming.
+            self.emit_dock_transition(app, "collapsing", current.mode);
             self.notify_watcher();
+
+            let dock = Arc::clone(self);
+            let app_handle = app.clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(COLLAPSE_ANIM_MS)).await;
+                dock.commit_collapse_if_current(&app_handle, gen);
+            });
+
+            current
         }
         #[cfg(any(target_os = "android", target_os = "ios"))]
-        let _ = device;
+        {
+            self.cancel_collapse_animation();
+            let mut next = self.get_state();
+            next.collapsed = true;
+            if let Ok(mut guard) = self.state.write() {
+                *guard = next.clone();
+            }
+            self.emit_dock_state(app, &next);
+            self.emit_dock_transition(app, "idle", next.mode);
+            next
+        }
+    }
 
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    fn commit_collapse_if_current(&self, app: &AppHandle, gen: u64) {
+        use tauri::Manager;
+
+        let next = {
+            let Ok(mut guard) = self.state.write() else {
+                self.collapsing.store(false, Ordering::SeqCst);
+                return;
+            };
+            if self.collapse_anim_gen.load(Ordering::SeqCst) != gen
+                || self.hidden_to_tray.load(Ordering::SeqCst)
+            {
+                return;
+            }
+            self.collapsing.store(false, Ordering::SeqCst);
+            guard.collapsed = true;
+            guard.clone()
+        };
+
+        let device = self.current_device();
+        self.bump_blur_low_gen();
+
+        if self.collapse_anim_gen.load(Ordering::SeqCst) != gen
+            || self.hidden_to_tray.load(Ordering::SeqCst)
+        {
+            return;
+        }
+
+        if let Some(win) = app.get_webview_window("main") {
+            let full_hide = is_full_hide_mode(next.mode);
+            if let Some(work) = self.resolve_work_area_for_window(&win) {
+                self.store_work_area(work.clone());
+                if full_hide {
+                    let _ = win.hide();
+                } else {
+                    let pos = win
+                        .outer_position()
+                        .ok()
+                        .filter(|p| p.x > -16_000 && p.y > -16_000);
+                    let rect = compute_collapsed_tabs_rect(
+                        &device,
+                        &work,
+                        pos.map(|p| p.x),
+                        pos.map(|p| p.y),
+                    );
+                    #[cfg(target_os = "windows")]
+                    crate::platform_win::set_window_no_activate(&win, true);
+                    self.apply_window_rect(&win, rect, false);
+                }
+            } else if full_hide {
+                let _ = win.hide();
+            }
+
+            #[cfg(target_os = "windows")]
+            if full_hide {
+                let trim_gen = self.bump_hide_trim_gen();
+                crate::platform_win::suspend_webview(&win);
+                crate::platform_win::schedule_hidden_trim(
+                    app.clone(),
+                    trim_gen,
+                    Arc::clone(&self.hide_trim_gen),
+                );
+            } else {
+                // Protruding tabs remain visible -> lower cache target without suspending.
+                crate::platform_win::set_memory_usage_low(&win);
+            }
+        }
+
+        if self.collapse_anim_gen.load(Ordering::SeqCst) != gen
+            || self.hidden_to_tray.load(Ordering::SeqCst)
+        {
+            return;
+        }
+
+        self.notify_watcher();
         self.emit_dock_state(app, &next);
-        next
+        self.emit_dock_transition(app, "idle", next.mode);
     }
 
     /// Toggle between expanded and collapsed (or reveal if hidden to tray).
-    pub fn toggle_expand(&self, app: &AppHandle) -> DockState {
+    /// Triggering mid-collapse immediately cancels the slide-out and expands back open.
+    pub fn toggle_expand(self: &Arc<Self>, app: &AppHandle) -> DockState {
         let current = self.get_state();
         let hidden = self.hidden_to_tray.load(Ordering::SeqCst);
-        if hidden || current.collapsed {
+        if hidden || current.collapsed || self.is_collapsing() {
             self.expand(app)
         } else {
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -593,7 +745,15 @@ impl DockController {
     }
 
     pub fn hide_to_tray(&self, app: &AppHandle) -> Result<(), String> {
-        self.hidden_to_tray.store(true, Ordering::SeqCst);
+        let (was_collapsing, mode) = {
+            let guard = self.state.write().unwrap_or_else(|e| e.into_inner());
+            let was_collapsing = self.cancel_collapse_animation();
+            self.hidden_to_tray.store(true, Ordering::SeqCst);
+            (was_collapsing, guard.mode)
+        };
+        if was_collapsing {
+            self.emit_dock_transition(app, "idle", mode);
+        }
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         {
             use tauri::Manager;
@@ -628,16 +788,17 @@ impl DockController {
         reset.tab_width_mode = TabWidthMode::Uniform;
 
         self.update_device_cache(&reset);
-        self.hidden_to_tray.store(false, Ordering::SeqCst);
 
-        let mut next = self.get_state();
-        next.mode = reset.dock_mode;
-        next.collapsed = false;
-        next.auto_hide = reset.auto_hide;
-        next.always_on_top = reset.always_on_top;
-        if let Ok(mut guard) = self.state.write() {
-            *guard = next.clone();
-        }
+        let (was_collapsing, next) = {
+            let mut guard = self.state.write().unwrap_or_else(|e| e.into_inner());
+            let was_collapsing = self.cancel_collapse_animation();
+            self.hidden_to_tray.store(false, Ordering::SeqCst);
+            guard.mode = reset.dock_mode;
+            guard.collapsed = false;
+            guard.auto_hide = reset.auto_hide;
+            guard.always_on_top = reset.always_on_top;
+            (was_collapsing, guard.clone())
+        };
 
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         {
@@ -665,6 +826,9 @@ impl DockController {
             self.notify_watcher();
         }
 
+        if was_collapsing {
+            self.emit_dock_transition(app, "idle", next.mode);
+        }
         self.emit_dock_state(app, &next);
         reset
     }
@@ -826,7 +990,10 @@ impl DockController {
             let gen = self.bump_blur_low_gen();
             if focused {
                 #[cfg(target_os = "windows")]
-                if !self.hidden_to_tray.load(Ordering::SeqCst) && !self.get_state().collapsed {
+                if !self.hidden_to_tray.load(Ordering::SeqCst)
+                    && !self.get_state().collapsed
+                    && !self.is_collapsing()
+                {
                     use tauri::Manager;
                     if let Some(win) = app.get_webview_window("main") {
                         crate::platform_win::set_memory_usage_normal(&win);
@@ -884,7 +1051,7 @@ impl DockController {
         ) {
             return;
         }
-        if self.is_persist_suppressed() || self.get_state().collapsed {
+        if self.is_persist_suppressed() || self.get_state().collapsed || self.is_collapsing() {
             return;
         }
 
@@ -898,7 +1065,7 @@ impl DockController {
             if dock.geometry_gen.load(Ordering::SeqCst) != gen {
                 return;
             }
-            if dock.is_persist_suppressed() || dock.get_state().collapsed {
+            if dock.is_persist_suppressed() || dock.get_state().collapsed || dock.is_collapsing() {
                 return;
             }
             dock.persist_current_geometry(&app_handle, &storage_ref);
@@ -971,7 +1138,7 @@ impl DockController {
                     edge_dwell_since = None;
 
                     // Case 2: Expanded with auto-hide enabled -> collapse if cursor stays outside for ~500ms.
-                    if !st.collapsed && st.auto_hide && !paused {
+                    if !st.collapsed && st.auto_hide && !paused && !dock.is_collapsing() {
                         let recently_expanded = dock
                             .last_expand_at
                             .lock()
@@ -1104,17 +1271,30 @@ impl DockController {
     ) {
         use tauri::{LogicalSize, PhysicalPosition, PhysicalSize, Position, Size};
         self.suppress_persist_briefly();
+        if !expanded {
+            // Remove min-size constraint BEFORE shrinking so collapsed tab strip can shrink to ~64px or ~40px.
+            let _ = win.set_min_size(None::<Size>);
+        }
+
+        #[cfg(target_os = "windows")]
+        let applied_atomic =
+            crate::platform_win::set_window_rect(win, rect.x, rect.y, rect.width, rect.height);
+        #[cfg(not(target_os = "windows"))]
+        let applied_atomic = false;
+
+        if !applied_atomic {
+            let _ = win.set_size(Size::Physical(PhysicalSize::new(rect.width, rect.height)));
+            let _ = win.set_position(Position::Physical(PhysicalPosition::new(rect.x, rect.y)));
+        }
+
         if expanded {
+            // Re-apply min-size constraint AFTER atomic expansion so `set_min_size` never triggers
+            // an intermediate resize frame from the collapsed sliver width.
             let _ = win.set_min_size(Some(Size::Logical(LogicalSize::new(
                 MIN_PANEL_WIDTH,
                 MIN_PANEL_HEIGHT,
             ))));
-        } else {
-            // Remove min-size constraint so collapsed tab strip can shrink to ~64px or ~40px.
-            let _ = win.set_min_size(None::<Size>);
         }
-        let _ = win.set_size(Size::Physical(PhysicalSize::new(rect.width, rect.height)));
-        let _ = win.set_position(Position::Physical(PhysicalPosition::new(rect.x, rect.y)));
     }
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -1350,5 +1530,115 @@ mod tests {
             assert!(!ctrl.creating_windows.lock().unwrap().insert("calendar".into()));
         }
         assert!(ctrl.creating_windows.lock().unwrap().insert("calendar".into()));
+    }
+
+    #[test]
+    fn test_expanded_rect_with_anchor_preserves_continuity_and_clamps() {
+        let work = sample_work_area(1.0);
+        let mut dev = DeviceSettings::default();
+        dev.panel_width = 480;
+        dev.panel_height = 680;
+        dev.uniform_tab_width = 64;
+
+        // RightTabs: anchor_y overrides stale/unpersisted device.panel_y so ΔY === 0px
+        dev.dock_mode = DockMode::RightTabs;
+        dev.panel_y = Some(120);
+        let col_r = compute_collapsed_tabs_rect(&dev, &work, Some(1376), Some(260));
+        assert_eq!(col_r.y, 260);
+        let exp_r = compute_expanded_rect_with_anchor(&dev, &work, Some(col_r.x), Some(col_r.y));
+        assert_eq!(exp_r.y, col_r.y);
+        assert_eq!(exp_r.x + exp_r.width as i32, work.right);
+        assert_eq!(exp_r.height, col_r.height);
+        // None anchor falls back to device.panel_y (identical to compute_expanded_rect)
+        assert_eq!(
+            compute_expanded_rect_with_anchor(&dev, &work, None, None),
+            compute_expanded_rect(&dev, &work)
+        );
+        // Out-of-bounds anchor_y clamps cleanly inside WorkArea
+        let clamped_top = compute_expanded_rect_with_anchor(&dev, &work, None, Some(-80));
+        assert_eq!(clamped_top.y, work.top);
+        let clamped_bottom = compute_expanded_rect_with_anchor(&dev, &work, None, Some(9999));
+        assert_eq!(clamped_bottom.y + clamped_bottom.height as i32, work.bottom);
+
+        // LeftTabs: exact Y continuity
+        dev.dock_mode = DockMode::LeftTabs;
+        dev.panel_y = None;
+        let col_l = compute_collapsed_tabs_rect(&dev, &work, Some(0), Some(310));
+        let exp_l = compute_expanded_rect_with_anchor(&dev, &work, Some(col_l.x), Some(col_l.y));
+        assert_eq!(exp_l.x, work.left);
+        assert_eq!(exp_l.y, col_l.y);
+        assert_eq!(exp_l.height, col_l.height);
+
+        // TopTabs: exact X continuity & horizontal clamping
+        dev.dock_mode = DockMode::TopTabs;
+        dev.panel_x = Some(100);
+        let col_t = compute_collapsed_tabs_rect(&dev, &work, Some(620), Some(0));
+        let exp_t = compute_expanded_rect_with_anchor(&dev, &work, Some(col_t.x), Some(col_t.y));
+        assert_eq!(exp_t.y, work.top);
+        assert_eq!(exp_t.x, col_t.x);
+        assert_eq!(exp_t.width, col_t.width);
+        let clamped_left = compute_expanded_rect_with_anchor(&dev, &work, Some(-40), None);
+        assert_eq!(clamped_left.x, work.left);
+        let clamped_right = compute_expanded_rect_with_anchor(&dev, &work, Some(9999), None);
+        assert_eq!(clamped_right.x + clamped_right.width as i32, work.right);
+
+        // Fractional DPI (1.25x): collapse -> expand roundtrip preserves exact physical Y
+        let hidpi = sample_work_area(1.25);
+        dev.dock_mode = DockMode::RightTabs;
+        dev.panel_y = Some(50);
+        let col_hi = compute_collapsed_tabs_rect(&dev, &hidpi, None, Some(140));
+        let exp_hi =
+            compute_expanded_rect_with_anchor(&dev, &hidpi, Some(col_hi.x), Some(col_hi.y));
+        assert_eq!(exp_hi.y, col_hi.y);
+        assert_eq!(exp_hi.height, col_hi.height);
+        assert_eq!(exp_hi.x + exp_hi.width as i32, hidpi.right);
+    }
+
+    #[test]
+    fn test_dock_transition_event_serialization() {
+        let ev = DockTransitionEvent {
+            phase: "collapsing",
+            mode: DockMode::RightTabs,
+        };
+        let json = serde_json::to_string(&ev).expect("serialize DockTransitionEvent");
+        assert_eq!(json, r#"{"phase":"collapsing","mode":"right_tabs"}"#);
+
+        let ev2 = DockTransitionEvent {
+            phase: "expanding",
+            mode: DockMode::TopHide,
+        };
+        let json2 = serde_json::to_string(&ev2).expect("serialize DockTransitionEvent");
+        assert_eq!(json2, r#"{"phase":"expanding","mode":"top_hide"}"#);
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    #[test]
+    fn test_collapse_anim_gen_cancellation_and_watcher_gating() {
+        let mut dev = DeviceSettings::default();
+        dev.dock_mode = DockMode::RightTabs;
+        dev.auto_hide = true;
+        let ctrl = DockController::new(&dev);
+
+        assert!(!ctrl.is_collapsing());
+        assert!(ctrl.watcher_needs_polling());
+
+        // Enter collapsing animation phase -> watcher must park/gate so it never spams collapse()
+        ctrl.collapsing.store(true, Ordering::SeqCst);
+        let gen1 = ctrl.bump_collapse_anim_gen();
+        assert!(ctrl.is_collapsing());
+        assert!(!ctrl.watcher_needs_polling());
+        assert_eq!(ctrl.collapse_anim_gen.load(Ordering::SeqCst), gen1);
+
+        // Cancel animation (e.g. user re-expands mid-collapse) -> bumps gen, clears flag, re-enables watcher
+        let was_collapsing = ctrl.cancel_collapse_animation();
+        assert!(was_collapsing);
+        assert!(!ctrl.is_collapsing());
+        let gen2 = ctrl.collapse_anim_gen.load(Ordering::SeqCst);
+        assert!(gen2 > gen1);
+        assert!(ctrl.watcher_needs_polling());
+
+        // Subsequent cancel reports false and keeps advancing generation monotonically
+        assert!(!ctrl.cancel_collapse_animation());
+        assert!(ctrl.collapse_anim_gen.load(Ordering::SeqCst) > gen2);
     }
 }

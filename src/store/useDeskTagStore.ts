@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import * as api from '../api/tauri';
 import { applySkinToDocument, getSkinById } from '../themes/skins';
 import {
@@ -40,6 +40,13 @@ export type TodoScope = 'today' | 'week' | 'month' | 'unscheduled' | 'list';
 export type MobileSection = 'todo' | 'lists' | 'notes' | 'views' | 'settings';
 
 export type SettingsTabId = 'general' | 'panel' | 'personalize' | 'shortcuts' | 'data' | 'about';
+
+export type DockTransitionPhase = 'idle' | 'expanding' | 'collapsing';
+
+interface DockTransitionEventPayload {
+  phase: DockTransitionPhase;
+  mode: DockMode;
+}
 
 export interface NavHistoryEntry {
   activeTab: ActiveTab;
@@ -435,7 +442,7 @@ function defaultPlatformInfo(): PlatformInfo {
   const isWin = /Windows/i.test(ua);
   const platform = isAndroid ? 'android' : isMac ? 'macos' : isWin ? 'windows' : 'linux';
   const appVersion =
-    typeof __APP_VERSION__ === 'string' && __APP_VERSION__.trim() ? __APP_VERSION__ : '1.3.0';
+    typeof __APP_VERSION__ === 'string' && __APP_VERSION__.trim() ? __APP_VERSION__ : '1.3.1';
   return {
     platform,
     isDesktop: !isAndroid,
@@ -453,6 +460,8 @@ export interface DeskTagStoreValue {
   data: AppData;
   device: DeviceSettings;
   dock: DockState;
+  dockTransition: DockTransitionPhase;
+  clearDockTransition: () => void;
   platform: PlatformInfo;
   isMobileLayout: boolean;
   notifications: NotificationItem[];
@@ -612,6 +621,7 @@ export const DeskTagProvider: React.FC<{ children: React.ReactNode }> = ({ child
     alwaysOnTop: false,
     platform: defaultPlatformInfo().platform,
   }));
+  const [dockTransition, setDockTransition] = useState<DockTransitionPhase>('idle');
   const [narrowViewport, setNarrowViewport] = useState<boolean>(() => {
     const plat = defaultPlatformInfo();
     return (
@@ -653,6 +663,13 @@ export const DeskTagProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const saveTimerRef = useRef<number | null>(null);
   const toastTimerRef = useRef<number | null>(null);
+  const expandResetTimerRef = useRef<number | null>(null);
+  const browserCollapseTimerRef = useRef<number | null>(null);
+  const dockRef = useRef<DockState>(dock);
+  dockRef.current = dock;
+  const dockTransitionRef = useRef<DockTransitionPhase>(dockTransition);
+  dockTransitionRef.current = dockTransition;
+  const prevDockCollapsedRef = useRef<boolean | null>(null);
   const latestDataRef = useRef<AppData>(data);
   latestDataRef.current = data;
   const latestDeviceRef = useRef<DeviceSettings>(device);
@@ -663,6 +680,58 @@ export const DeskTagProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const updateInstallingRef = useRef(false);
 
   const isMobileLayout = platform.isMobile || narrowViewport;
+
+  const clearExpandResetTimer = useCallback(() => {
+    if (expandResetTimerRef.current !== null) {
+      window.clearTimeout(expandResetTimerRef.current);
+      expandResetTimerRef.current = null;
+    }
+  }, []);
+
+  const clearBrowserCollapseTimer = useCallback(() => {
+    if (browserCollapseTimerRef.current !== null) {
+      window.clearTimeout(browserCollapseTimerRef.current);
+      browserCollapseTimerRef.current = null;
+    }
+  }, []);
+
+  const scheduleExpandReset = useCallback(() => {
+    clearExpandResetTimer();
+    expandResetTimerRef.current = window.setTimeout(() => {
+      expandResetTimerRef.current = null;
+      setDockTransition((cur) => (cur === 'expanding' ? 'idle' : cur));
+    }, 220);
+  }, [clearExpandResetTimer]);
+
+  const clearDockTransition = useCallback(() => {
+    clearExpandResetTimer();
+    setDockTransition((cur) => (cur === 'expanding' ? 'idle' : cur));
+  }, [clearExpandResetTimer]);
+
+  useEffect(() => {
+    return () => {
+      clearExpandResetTimer();
+      clearBrowserCollapseTimer();
+    };
+  }, [clearBrowserCollapseTimer, clearExpandResetTimer]);
+
+  // Synchronously bridge collapsed -> expanded transitions before first paint even if
+  // 'desktag://dock-state' arrives without a preceding 'desktag://dock-transition' event.
+  useLayoutEffect(() => {
+    const prev = prevDockCollapsedRef.current;
+    prevDockCollapsedRef.current = dock.collapsed;
+    if (prev === true && !dock.collapsed) {
+      if (dockTransitionRef.current !== 'expanding') {
+        setDockTransition('expanding');
+        scheduleExpandReset();
+      }
+    } else if (prev === false && dock.collapsed) {
+      if (dockTransitionRef.current === 'collapsing') {
+        clearExpandResetTimer();
+        setDockTransition('idle');
+      }
+    }
+  }, [dock.collapsed, clearExpandResetTimer, scheduleExpandReset]);
 
   const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
@@ -884,6 +953,21 @@ export const DeskTagProvider: React.FC<{ children: React.ReactNode }> = ({ child
             setDock(ev.payload);
           }
         });
+        const u4b = await listen<DockTransitionEventPayload>('desktag://dock-transition', (ev) => {
+          const phase = ev.payload?.phase;
+          if (!phase) return;
+          if (phase === 'expanding') {
+            clearBrowserCollapseTimer();
+            setDockTransition('expanding');
+            scheduleExpandReset();
+          } else if (phase === 'collapsing') {
+            clearExpandResetTimer();
+            setDockTransition('collapsing');
+          } else {
+            clearExpandResetTimer();
+            setDockTransition('idle');
+          }
+        });
         const u5 = await listen<NotificationItem[]>('desktag://notifications-updated', (ev) => {
           if (Array.isArray(ev.payload)) {
             setNotifications(ev.payload);
@@ -902,7 +986,7 @@ export const DeskTagProvider: React.FC<{ children: React.ReactNode }> = ({ child
           }
         });
 
-        unlisteners = [u1, u2, u3, u4, u5, u6, u7];
+        unlisteners = [u1, u2, u3, u4, u4b, u5, u6, u7];
       } catch (err) {
         console.warn('[DeskTag] event listener setup skipped:', err);
       }
@@ -918,7 +1002,7 @@ export const DeskTagProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }
       }
     };
-  }, [refreshNotifications, refreshWebdav]);
+  }, [clearBrowserCollapseTimer, clearExpandResetTimer, refreshNotifications, refreshWebdav, scheduleExpandReset]);
 
   // Derived active slices
   const activeTodos = useMemo(
@@ -1813,15 +1897,21 @@ export const DeskTagProvider: React.FC<{ children: React.ReactNode }> = ({ child
     [],
   );
 
-  const setDockMode = useCallback(async (mode: DockMode) => {
-    setDevice((prev) => ({ ...prev, dockMode: mode }));
-    try {
-      const nextDock = await api.setDockMode(mode);
-      setDock(nextDock);
-    } catch (err) {
-      console.error('[DeskTag] setDockMode failed:', err);
-    }
-  }, []);
+  const setDockMode = useCallback(
+    async (mode: DockMode) => {
+      clearBrowserCollapseTimer();
+      clearExpandResetTimer();
+      setDockTransition('idle');
+      setDevice((prev) => ({ ...prev, dockMode: mode }));
+      try {
+        const nextDock = await api.setDockMode(mode);
+        setDock(nextDock);
+      } catch (err) {
+        console.error('[DeskTag] setDockMode failed:', err);
+      }
+    },
+    [clearBrowserCollapseTimer, clearExpandResetTimer],
+  );
 
   const toggleAutoHide = useCallback(async () => {
     const nextEnabled = !dock.autoHide;
@@ -1848,22 +1938,67 @@ export const DeskTagProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, [dock.alwaysOnTop]);
 
   const expandPanel = useCallback(async () => {
+    if (!api.isTauriRuntime()) {
+      const wasCollapsing = dockTransitionRef.current === 'collapsing';
+      const wasCollapsed = dockRef.current.collapsed;
+      clearBrowserCollapseTimer();
+      if (!wasCollapsing && !wasCollapsed) {
+        return;
+      }
+      try {
+        const nextDock = await api.expandPanel();
+        setDock(nextDock);
+      } catch {
+        setDock((prev) => ({ ...prev, collapsed: false }));
+      }
+      setDockTransition('expanding');
+      scheduleExpandReset();
+      return;
+    }
+
+    if (dockTransitionRef.current === 'collapsing') {
+      setDockTransition('expanding');
+      scheduleExpandReset();
+    }
     try {
       const nextDock = await api.expandPanel();
       setDock(nextDock);
     } catch {
       setDock((prev) => ({ ...prev, collapsed: false }));
     }
-  }, []);
+  }, [clearBrowserCollapseTimer, scheduleExpandReset]);
 
   const collapsePanel = useCallback(async () => {
+    if (!api.isTauriRuntime()) {
+      if (dockRef.current.collapsed || dockTransitionRef.current === 'collapsing') {
+        return;
+      }
+      clearExpandResetTimer();
+      clearBrowserCollapseTimer();
+      setDockTransition('collapsing');
+      browserCollapseTimerRef.current = window.setTimeout(() => {
+        browserCollapseTimerRef.current = null;
+        void api
+          .collapsePanel()
+          .then((nextDock) => {
+            setDock(nextDock);
+            setDockTransition('idle');
+          })
+          .catch(() => {
+            setDock((prev) => ({ ...prev, collapsed: true }));
+            setDockTransition('idle');
+          });
+      }, 160);
+      return;
+    }
+
     try {
       const nextDock = await api.collapsePanel();
       setDock(nextDock);
     } catch {
       setDock((prev) => ({ ...prev, collapsed: true }));
     }
-  }, []);
+  }, [clearBrowserCollapseTimer, clearExpandResetTimer]);
 
   const hideToTray = useCallback(async () => {
     try {
@@ -1893,6 +2028,9 @@ export const DeskTagProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, []);
 
   const resetPanelLayout = useCallback(async () => {
+    clearBrowserCollapseTimer();
+    clearExpandResetTimer();
+    setDockTransition('idle');
     try {
       const nextDevice = await api.resetPanelLayout();
       setDevice(nextDevice);
@@ -1902,7 +2040,7 @@ export const DeskTagProvider: React.FC<{ children: React.ReactNode }> = ({ child
     } catch (err) {
       console.error('[DeskTag] resetPanelLayout failed:', err);
     }
-  }, [showToast]);
+  }, [clearBrowserCollapseTimer, clearExpandResetTimer, showToast]);
 
   const applySyncedAppData = useCallback((newData: AppData) => {
     if (saveTimerRef.current !== null) {
@@ -2095,6 +2233,8 @@ export const DeskTagProvider: React.FC<{ children: React.ReactNode }> = ({ child
     data,
     device,
     dock,
+    dockTransition,
+    clearDockTransition,
     platform,
     isMobileLayout,
     notifications,

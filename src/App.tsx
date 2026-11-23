@@ -7,7 +7,16 @@ import {
   SparklesIcon,
   XIcon,
 } from 'lucide-react';
-import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  Suspense,
+  lazy,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { isTauriRuntime } from './api/tauri';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ListManagerModal } from './components/ListManagerModal';
@@ -25,6 +34,7 @@ import { SegmentedControl, SegmentedControlItem } from './components/ui/segmente
 import { Spinner } from './components/ui/spinner';
 import { AnchoredToastProvider, ToastProvider } from './components/ui/toast';
 import { TooltipProvider } from './components/ui/tooltip';
+import { cn } from './lib/utils';
 import { DeskTagProvider, useDeskTagStore } from './store/useDeskTagStore';
 
 const CalendarView = lazy(() => import('./components/CalendarView'));
@@ -100,8 +110,9 @@ const FloatingToastPill: React.FC<{ message: string | null }> = ({ message }) =>
   if (!message) return null;
   return (
     <div
+      key={message}
       aria-live="polite"
-      className="pointer-events-none absolute bottom-3 left-1/2 z-60 max-w-[calc(100%-24px)] -translate-x-1/2 truncate rounded-lg border bg-popover not-dark:bg-clip-padding px-3 py-1.5 font-medium text-popover-foreground text-xs shadow-lg/5 before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-lg)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] dark:before:shadow-[0_-1px_--theme(--color-white/6%)]"
+      className="desktag-toast-pill pointer-events-none absolute bottom-3 left-1/2 z-60 max-w-[calc(100%-24px)] truncate rounded-lg border bg-popover not-dark:bg-clip-padding px-3 py-1.5 font-medium text-popover-foreground text-xs shadow-lg/5 before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-lg)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] dark:before:shadow-[0_-1px_--theme(--color-white/6%)]"
       role="status"
     >
       {message}
@@ -114,6 +125,8 @@ const DeskTagShell: React.FC = () => {
     loading,
     device,
     dock,
+    dockTransition,
+    clearDockTransition,
     isMobileLayout,
     activeTab,
     activeLists,
@@ -142,6 +155,8 @@ const DeskTagShell: React.FC = () => {
     setShowSearch,
     setShowVoiceModal,
     closeAllPopovers,
+    expandPanel,
+    collapsePanel,
     triggerWebdavSyncNow,
     refreshWebdav,
     checkForUpdates,
@@ -157,12 +172,110 @@ const DeskTagShell: React.FC = () => {
   // Settings initial tab override (e.g. jump directly to About from update banner / menu)
   const [settingsInitialTab, setSettingsInitialTab] = useState<'about' | undefined>(undefined);
 
+  // Measured side/top tab rail size for pixel-exact GPU dock translation across all tab width modes
+  const defaultRailW = Math.max(48, Math.min(120, device.uniformTabWidth || 64));
+  const [railMetrics, setRailMetrics] = useState<{ width: number; height: number }>(() => ({
+    width: defaultRailW,
+    height: 32,
+  }));
+  const handleRailMetricsChange = useCallback((next: { width: number; height: number }) => {
+    setRailMetrics((prev) =>
+      prev.width === next.width && prev.height === next.height ? prev : next,
+    );
+  }, []);
+  const shellStyle = useMemo(
+    () =>
+      ({
+        '--dock-rail-w': `${railMetrics.width}px`,
+        '--dock-rail-h': `${railMetrics.height}px`,
+      }) as React.CSSProperties,
+    [railMetrics.height, railMetrics.width],
+  );
+
   // Mobile lists selection + pull-to-sync state
   const [mobileListId, setMobileListId] = useState<string | null>(null);
   const [pullOffset, setPullOffset] = useState(0);
   const touchStartYRef = useRef<number | null>(null);
   const mobileBodyRef = useRef<HTMLDivElement | null>(null);
   const startupUpdateCheckedRef = useRef(false);
+
+  const isFullHideMode = dock.mode.endsWith('_hide');
+  const isCollapsedTabsOnly = dock.collapsed && dock.mode.endsWith('_tabs');
+  const isCollapsedFullHide = dock.collapsed && isFullHideMode;
+  const effectiveDockTransition = dock.collapsed ? 'idle' : dockTransition;
+
+  // View cross-fade keys (skip initial mount and dock expand so animations never double-stack)
+  const desktopViewKey = showQuadrant
+    ? 'quadrant'
+    : activeTab.kind === 'list'
+      ? `list:${activeTab.listId}`
+      : activeTab.kind === 'note'
+        ? `note:${activeTab.noteId}`
+        : activeTab.kind;
+
+  const mobileViewKey =
+    mobileSection === 'notes' && activeTab.kind === 'note'
+      ? `notes:${activeTab.noteId}`
+      : mobileSection === 'views'
+        ? `views:${mobileViewsSubTab}`
+        : mobileSection === 'todo' && showQuadrant
+          ? 'todo:quadrant'
+          : mobileSection;
+
+  const lastDesktopViewKeyRef = useRef<string | null>(null);
+  const [desktopViewAnimClass, setDesktopViewAnimClass] = useState('');
+  const lastMobileViewKeyRef = useRef<string | null>(null);
+  const [mobileViewAnimClass, setMobileViewAnimClass] = useState('');
+
+  useLayoutEffect(() => {
+    if (loading || route.kind !== 'main' || isMobileLayout) return;
+    if (isCollapsedTabsOnly || isCollapsedFullHide) {
+      lastDesktopViewKeyRef.current = null;
+      setDesktopViewAnimClass('');
+      return;
+    }
+    const prevKey = lastDesktopViewKeyRef.current;
+    lastDesktopViewKeyRef.current = desktopViewKey;
+    if (prevKey === null || prevKey === desktopViewKey) {
+      return;
+    }
+    if (dockTransition !== 'idle') {
+      setDesktopViewAnimClass('');
+      return;
+    }
+    setDesktopViewAnimClass('desktag-view-enter');
+  }, [
+    loading,
+    route.kind,
+    isMobileLayout,
+    isCollapsedTabsOnly,
+    isCollapsedFullHide,
+    desktopViewKey,
+    dockTransition,
+  ]);
+
+  useLayoutEffect(() => {
+    if (loading || route.kind !== 'main' || !isMobileLayout) return;
+    const prevKey = lastMobileViewKeyRef.current;
+    lastMobileViewKeyRef.current = mobileViewKey;
+    if (prevKey === null || prevKey === mobileViewKey) {
+      return;
+    }
+    setMobileViewAnimClass('desktag-view-enter');
+  }, [loading, route.kind, isMobileLayout, mobileViewKey]);
+
+  const handleStageAnimationEnd = useCallback(
+    (e: React.AnimationEvent<HTMLDivElement>) => {
+      // Only handle the dock stage's own animation (ignore bubbled child animations)
+      if (e.target !== e.currentTarget) return;
+      // NEVER clear 'collapsing' on animationend: forwards must hold the collapsed offset
+      // steady until dock.collapsed flips to true.
+      if (dockTransition === 'expanding') {
+        clearDockTransition();
+      }
+    },
+    [clearDockTransition, dockTransition],
+  );
 
   // Reset initialTab override once Settings closes
   useEffect(() => {
@@ -193,9 +306,26 @@ const DeskTagShell: React.FC = () => {
     }
   }, [activeLists, mobileListId]);
 
-  // Global keyboard shortcuts: Ctrl/Cmd+K for Search, Escape to close active modals/popovers
+  // Global keyboard shortcuts: Ctrl/Cmd+K for Search, Alt+Shift+D in browser preview, Escape to close overlays
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (
+        !isTauriRuntime() &&
+        route.kind === 'main' &&
+        !isMobileLayout &&
+        e.altKey &&
+        e.shiftKey &&
+        e.key.toLowerCase() === 'd'
+      ) {
+        e.preventDefault();
+        if (dock.collapsed || dockTransition === 'collapsing') {
+          void expandPanel();
+        } else {
+          void collapsePanel();
+        }
+        return;
+      }
+
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         setShowSearch(!showSearch);
@@ -224,6 +354,12 @@ const DeskTagShell: React.FC = () => {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [
+    route.kind,
+    isMobileLayout,
+    dock.collapsed,
+    dockTransition,
+    expandPanel,
+    collapsePanel,
     showSearch,
     showVoiceModal,
     reminderTodoId,
@@ -439,137 +575,139 @@ const DeskTagShell: React.FC = () => {
               >
                 {updateBannerNode}
 
-                <Suspense fallback={null}>
-                  {/* Mobile Tab 1: 待办 */}
-                  {mobileSection === 'todo' && (showQuadrant ? <QuadrantView /> : <TodoView />)}
+                <div key={mobileViewKey} className={cn('desktag-view-stage', mobileViewAnimClass)}>
+                  <Suspense fallback={null}>
+                    {/* Mobile Tab 1: 待办 */}
+                    {mobileSection === 'todo' && (showQuadrant ? <QuadrantView /> : <TodoView />)}
 
-                  {/* Mobile Tab 2: 清单 */}
-                  {mobileSection === 'lists' && (
-                    <div className="flex min-h-0 flex-1 flex-col">
-                      <div className="flex shrink-0 items-center gap-1.5 overflow-x-auto border-b bg-background px-3 py-2">
-                        {activeLists.map((list) => {
-                          const active = mobileListId === list.id;
-                          return (
-                            <Button
-                              key={list.id}
-                              onClick={() => setMobileListId(list.id)}
-                              size="xs"
-                              variant={active ? 'default' : 'outline'}
-                            >
-                              <span
-                                className="size-2 shrink-0 rounded-full"
-                                style={{ backgroundColor: list.color }}
-                              />
-                              <span>{list.name}</span>
-                            </Button>
-                          );
-                        })}
-                        <Button
-                          className="border-dashed text-muted-foreground"
-                          onClick={() => setShowListManager(true)}
-                          size="xs"
-                          variant="outline"
-                        >
-                          <PlusIcon aria-hidden="true" />
-                          <span>管理清单</span>
-                        </Button>
+                    {/* Mobile Tab 2: 清单 */}
+                    {mobileSection === 'lists' && (
+                      <div className="flex min-h-0 flex-1 flex-col">
+                        <div className="flex shrink-0 items-center gap-1.5 overflow-x-auto border-b bg-background px-3 py-2">
+                          {activeLists.map((list) => {
+                            const active = mobileListId === list.id;
+                            return (
+                              <Button
+                                key={list.id}
+                                onClick={() => setMobileListId(list.id)}
+                                size="xs"
+                                variant={active ? 'default' : 'outline'}
+                              >
+                                <span
+                                  className="size-2 shrink-0 rounded-full"
+                                  style={{ backgroundColor: list.color }}
+                                />
+                                <span>{list.name}</span>
+                              </Button>
+                            );
+                          })}
+                          <Button
+                            className="border-dashed text-muted-foreground"
+                            onClick={() => setShowListManager(true)}
+                            size="xs"
+                            variant="outline"
+                          >
+                            <PlusIcon aria-hidden="true" />
+                            <span>管理清单</span>
+                          </Button>
+                        </div>
+                        {mobileListId ? (
+                          <TodoView listIdOverride={mobileListId} />
+                        ) : (
+                          <Empty>
+                            <EmptyMedia variant="icon">
+                              <ListTodoIcon aria-hidden="true" />
+                            </EmptyMedia>
+                            <EmptyTitle className="text-base">还没有自定义清单</EmptyTitle>
+                            <EmptyContent>
+                              <Button onClick={() => setShowListManager(true)} size="sm">
+                                <PlusIcon aria-hidden="true" />
+                                新建清单
+                              </Button>
+                            </EmptyContent>
+                          </Empty>
+                        )}
                       </div>
-                      {mobileListId ? (
-                        <TodoView listIdOverride={mobileListId} />
-                      ) : (
-                        <Empty>
-                          <EmptyMedia variant="icon">
-                            <ListTodoIcon aria-hidden="true" />
-                          </EmptyMedia>
-                          <EmptyTitle className="text-base">还没有自定义清单</EmptyTitle>
-                          <EmptyContent>
-                            <Button onClick={() => setShowListManager(true)} size="sm">
-                              <PlusIcon aria-hidden="true" />
-                              新建清单
-                            </Button>
-                          </EmptyContent>
-                        </Empty>
-                      )}
-                    </div>
-                  )}
+                    )}
 
-                  {/* Mobile Tab 3: 便签 */}
-                  {mobileSection === 'notes' && (
-                    <div className="flex min-h-0 flex-1 flex-col">
-                      {activeMobileNoteId ? (
-                        <>
-                          <div className="flex shrink-0 items-center border-b bg-sidebar px-2.5 py-1.5">
-                            <Button
-                              onClick={() => setActiveTab({ kind: 'note_library' })}
-                              size="xs"
-                              variant="ghost"
-                            >
-                              <ArrowLeftIcon aria-hidden="true" />
-                              <span>返回便签库</span>
-                            </Button>
-                          </div>
-                          <NoteView noteId={activeMobileNoteId} />
-                        </>
-                      ) : (
-                        <>
-                          {pinnedNotes.length > 0 && (
-                            <div className="flex shrink-0 items-center gap-1.5 overflow-x-auto px-3 pt-2 pb-1">
-                              <span className="shrink-0 text-muted-foreground text-xs">置顶：</span>
-                              {pinnedNotes.map((n) => (
-                                <Badge
-                                  key={n.id}
-                                  render={
-                                    <button
-                                      onClick={() => setActiveTab({ kind: 'note', noteId: n.id })}
-                                      type="button"
-                                    />
-                                  }
-                                  variant="outline"
-                                >
-                                  {n.title || '便签'}
-                                </Badge>
-                              ))}
+                    {/* Mobile Tab 3: 便签 */}
+                    {mobileSection === 'notes' && (
+                      <div className="flex min-h-0 flex-1 flex-col">
+                        {activeMobileNoteId ? (
+                          <>
+                            <div className="flex shrink-0 items-center border-b bg-sidebar px-2.5 py-1.5">
+                              <Button
+                                onClick={() => setActiveTab({ kind: 'note_library' })}
+                                size="xs"
+                                variant="ghost"
+                              >
+                                <ArrowLeftIcon aria-hidden="true" />
+                                <span>返回便签库</span>
+                              </Button>
                             </div>
-                          )}
-                          <NoteLibraryView
-                            onOpenNote={(id) => setActiveTab({ kind: 'note', noteId: id })}
-                          />
-                        </>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Mobile Tab 4: 视图 (Calendar + Quadrants) */}
-                  {mobileSection === 'views' && (
-                    <div className="flex min-h-0 flex-1 flex-col">
-                      <div className="flex shrink-0 justify-center border-b bg-sidebar px-3 py-2">
-                        <SegmentedControl render={<nav aria-label="视图切换" />} size="sm">
-                          <SegmentedControlItem
-                            aria-current={mobileViewsSubTab === 'calendar' ? 'page' : undefined}
-                            onClick={() => setMobileViewsSubTab('calendar')}
-                          >
-                            <CalendarIcon aria-hidden="true" />
-                            <span>日历视图</span>
-                          </SegmentedControlItem>
-                          <SegmentedControlItem
-                            aria-current={mobileViewsSubTab === 'quadrant' ? 'page' : undefined}
-                            onClick={() => setMobileViewsSubTab('quadrant')}
-                          >
-                            <LayoutGridIcon aria-hidden="true" />
-                            <span>四象限</span>
-                          </SegmentedControlItem>
-                        </SegmentedControl>
+                            <NoteView noteId={activeMobileNoteId} />
+                          </>
+                        ) : (
+                          <>
+                            {pinnedNotes.length > 0 && (
+                              <div className="flex shrink-0 items-center gap-1.5 overflow-x-auto px-3 pt-2 pb-1">
+                                <span className="shrink-0 text-muted-foreground text-xs">置顶：</span>
+                                {pinnedNotes.map((n) => (
+                                  <Badge
+                                    key={n.id}
+                                    render={
+                                      <button
+                                        onClick={() => setActiveTab({ kind: 'note', noteId: n.id })}
+                                        type="button"
+                                      />
+                                    }
+                                    variant="outline"
+                                  >
+                                    {n.title || '便签'}
+                                  </Badge>
+                                ))}
+                              </div>
+                            )}
+                            <NoteLibraryView
+                              onOpenNote={(id) => setActiveTab({ kind: 'note', noteId: id })}
+                            />
+                          </>
+                        )}
                       </div>
+                    )}
 
-                      {mobileViewsSubTab === 'calendar' ? <CalendarView /> : <QuadrantView embedded />}
-                    </div>
-                  )}
+                    {/* Mobile Tab 4: 视图 (Calendar + Quadrants) */}
+                    {mobileSection === 'views' && (
+                      <div className="flex min-h-0 flex-1 flex-col">
+                        <div className="flex shrink-0 justify-center border-b bg-sidebar px-3 py-2">
+                          <SegmentedControl render={<nav aria-label="视图切换" />} size="sm">
+                            <SegmentedControlItem
+                              aria-current={mobileViewsSubTab === 'calendar' ? 'page' : undefined}
+                              onClick={() => setMobileViewsSubTab('calendar')}
+                            >
+                              <CalendarIcon aria-hidden="true" />
+                              <span>日历视图</span>
+                            </SegmentedControlItem>
+                            <SegmentedControlItem
+                              aria-current={mobileViewsSubTab === 'quadrant' ? 'page' : undefined}
+                              onClick={() => setMobileViewsSubTab('quadrant')}
+                            >
+                              <LayoutGridIcon aria-hidden="true" />
+                              <span>四象限</span>
+                            </SegmentedControlItem>
+                          </SegmentedControl>
+                        </div>
 
-                  {/* Mobile Tab 5: 设置 (Inline Settings with WebDAV 1-paste setup) */}
-                  {mobileSection === 'settings' && (
-                    <SettingsModal inline initialTab={settingsInitialTab} />
-                  )}
-                </Suspense>
+                        {mobileViewsSubTab === 'calendar' ? <CalendarView /> : <QuadrantView embedded />}
+                      </div>
+                    )}
+
+                    {/* Mobile Tab 5: 设置 (Inline Settings with WebDAV 1-paste setup) */}
+                    {mobileSection === 'settings' && (
+                      <SettingsModal inline initialTab={settingsInitialTab} />
+                    )}
+                  </Suspense>
+                </div>
               </div>
 
               <MobileBottomNav />
@@ -605,65 +743,83 @@ const DeskTagShell: React.FC = () => {
       ? 'dock-top'
       : 'dock-right';
 
-  const isCollapsedTabsOnly = dock.collapsed && dock.mode.endsWith('_tabs');
-
   return (
     <div
-      className={`desktag-shell ${dockDirectionClass}${isCollapsedTabsOnly ? ' is-collapsed' : ''}`}
+      className={cn(
+        'desktag-shell',
+        dockDirectionClass,
+        isCollapsedTabsOnly && 'is-collapsed',
+        isCollapsedFullHide && 'is-full-hide-collapsed',
+      )}
+      style={shellStyle}
     >
-      {/* Protruding Folder-Style Side Tab Rail (outside PortalProvider so tab tooltips/menus are not clipped) */}
-      <SideTabRail />
+      <div
+        className={cn(
+          'desktag-dock-stage',
+          effectiveDockTransition !== 'idle' && `is-${effectiveDockTransition}`,
+          isFullHideMode && 'is-full-hide',
+        )}
+        onAnimationEnd={handleStageAnimationEnd}
+      >
+        {/* Protruding Folder-Style Side Tab Rail (outside PortalProvider so tab tooltips/menus are not clipped) */}
+        <SideTabRail onRailMetricsChange={handleRailMetricsChange} />
 
-      {/* Main Rounded Panel Card + Scoped Overlay Portal Container */}
-      <PortalProvider container={portalContainer}>
-        <ToastProvider>
-          <AnchoredToastProvider>
-            {!isCollapsedTabsOnly && (
-              <main
-                ref={setPortalContainer}
-                className="desktag-panel-card isolate relative overflow-hidden"
-              >
-                <PanelHeader onOpenSettingsAbout={handleOpenSettingsAbout} />
+        {/* Main Rounded Panel Card + Scoped Overlay Portal Container */}
+        <PortalProvider container={portalContainer}>
+          <ToastProvider>
+            <AnchoredToastProvider>
+              {!isCollapsedTabsOnly && (
+                <main
+                  ref={setPortalContainer}
+                  className="desktag-panel-card isolate relative overflow-hidden"
+                >
+                  <PanelHeader onOpenSettingsAbout={handleOpenSettingsAbout} />
 
-                <div className="desktag-panel-body">
-                  {updateBannerNode}
+                  <div className="desktag-panel-body">
+                    {updateBannerNode}
 
-                  <Suspense fallback={null}>
-                    {showQuadrant ? (
-                      <QuadrantView />
-                    ) : activeTab.kind === 'todo' ? (
-                      <TodoView />
-                    ) : activeTab.kind === 'list' ? (
-                      <TodoView listIdOverride={activeTab.listId} />
-                    ) : activeTab.kind === 'note' ? (
-                      <NoteView noteId={activeTab.noteId} />
-                    ) : (
-                      <NoteLibraryView />
-                    )}
-                  </Suspense>
-                </div>
+                    <div
+                      key={desktopViewKey}
+                      className={cn('desktag-view-stage', desktopViewAnimClass)}
+                    >
+                      <Suspense fallback={null}>
+                        {showQuadrant ? (
+                          <QuadrantView />
+                        ) : activeTab.kind === 'todo' ? (
+                          <TodoView />
+                        ) : activeTab.kind === 'list' ? (
+                          <TodoView listIdOverride={activeTab.listId} />
+                        ) : activeTab.kind === 'note' ? (
+                          <NoteView noteId={activeTab.noteId} />
+                        ) : (
+                          <NoteLibraryView />
+                        )}
+                      </Suspense>
+                    </div>
+                  </div>
 
-                <FloatingToastPill message={toastMessage} />
-              </main>
-            )}
+                  <FloatingToastPill message={toastMessage} />
+                </main>
+              )}
 
-            {/* Modals (portal cleanly into <main> via PortalProvider) */}
-            <TodoDetailModal />
-            <ReminderModal />
-            <ListManagerModal />
-            {showSettings && (
-              <Suspense fallback={null}>
-                <SettingsModal initialTab={settingsInitialTab} />
-              </Suspense>
-            )}
-            {(showSearch || showVoiceModal) && (
-              <Suspense fallback={null}>
-                <SearchVoiceModals />
-              </Suspense>
-            )}
-          </AnchoredToastProvider>
-        </ToastProvider>
-      </PortalProvider>
+              {/* Modals (portal cleanly into <main> via PortalProvider) */}
+              <TodoDetailModal />
+              <ReminderModal />
+              <ListManagerModal />
+              {showSettings && (
+                <Suspense fallback={null}>
+                  <SettingsModal initialTab={settingsInitialTab} />
+                </Suspense>
+              )}
+              {(showSearch || showVoiceModal) && (
+                <Suspense fallback={null}>
+                  <SearchVoiceModals />
+                </Suspense>
+              )}
+            </AnchoredToastProvider>
+          </ToastProvider>
+        </PortalProvider>
+      </div>
     </div>
   );
 };

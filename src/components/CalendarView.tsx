@@ -292,6 +292,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ standalone = false }
 
   const [mode, setMode] = useState<CalendarMode>(isMobileLayout ? 'month' : 'week');
   const [anchorDate, setAnchorDate] = useState<Date>(() => new Date());
+  const [navAnim, setNavAnim] = useState<'none' | 'next' | 'prev' | 'fade'>('none');
   const [drawer, setDrawer] = useState<DrawerKind>(null);
   const [pinned, setPinned] = useState(false);
 
@@ -451,12 +452,22 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ standalone = false }
   };
 
   const stepAnchor = (delta: number) => {
+    setNavAnim(delta > 0 ? 'next' : 'prev');
     setAnchorDate((prev) => {
       if (mode === 'day') return addDays(prev, delta);
       if (mode === 'week') return addDays(prev, delta * 7);
       return new Date(prev.getFullYear(), prev.getMonth() + delta, 1);
     });
   };
+
+  const navAnimClass =
+    navAnim === 'next'
+      ? 'dt-slide-next'
+      : navAnim === 'prev'
+        ? 'dt-slide-prev'
+        : navAnim === 'fade'
+          ? 'dt-view-enter'
+          : undefined;
 
   const standaloneLunarSubtitle = useMemo(() => {
     const lunar = solarToLunar(
@@ -629,10 +640,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ standalone = false }
       <div
         key={todo.id}
         className={cn(
-          'group flex cursor-pointer flex-col gap-1.5 rounded-lg border p-2 transition-colors',
+          'group flex cursor-pointer flex-col gap-1.5 rounded-lg border p-2',
           mutedCompleted
-            ? 'border-border/70 bg-muted/50 opacity-85 hover:opacity-100'
-            : 'bg-card not-dark:bg-clip-padding shadow-xs/5 hover:border-ring/45 hover:bg-accent/40',
+            ? 'border-border/70 bg-muted/50 opacity-85 transition-[background-color,opacity] duration-[120ms] ease-[var(--dt-ease)] hover:opacity-100'
+            : 'dt-card-lift bg-card not-dark:bg-clip-padding shadow-xs/5 hover:border-ring/45 hover:bg-accent/40',
         )}
         onClick={(e) => {
           e.stopPropagation();
@@ -707,7 +718,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ standalone = false }
       <button
         key={`${todo.id}-${dateKey}`}
         className={cn(
-          'flex w-full min-w-0 items-center gap-1 text-left transition-colors',
+          'dt-pressable flex w-full min-w-0 items-center gap-1 text-left',
           isMobileLayout ? 'px-1 py-0.5 text-[10px]' : 'px-1.5 py-0.5 text-[11px]',
           isSpan
             ? cn(
@@ -894,7 +905,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ standalone = false }
             <GroupSeparator />
             <Button
               className="px-2.5 text-xs"
-              onClick={() => setAnchorDate(new Date())}
+              onClick={() => {
+                setNavAnim('fade');
+                setAnchorDate(new Date());
+              }}
               size="sm"
               variant="outline"
             >
@@ -922,7 +936,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ standalone = false }
 
           <div className="flex items-center gap-1.5">
             <Badge
-              className="h-6 rounded-md px-2 text-xs font-medium tabular-nums"
+              className="dt-pressable h-6 rounded-md px-2 text-xs font-medium tabular-nums"
               render={
                 <button
                   onClick={() => setDrawer((d) => (d === 'unscheduled' ? null : 'unscheduled'))}
@@ -937,7 +951,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ standalone = false }
             </Badge>
 
             <Badge
-              className="h-6 rounded-md px-2 text-xs font-medium tabular-nums"
+              className="dt-pressable h-6 rounded-md px-2 text-xs font-medium tabular-nums"
               render={
                 <button
                   onClick={() => setDrawer((d) => (d === 'overdue' ? null : 'overdue'))}
@@ -976,6 +990,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ standalone = false }
                 aria-label="日历视图切换"
                 onValueChange={(val) => {
                   if (val === 'day' || val === 'week' || val === 'month') {
+                    setNavAnim('fade');
                     setMode(val);
                   }
                 }}
@@ -1141,9 +1156,11 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ standalone = false }
         {mode === 'week' && (
           <div className="flex min-h-0 flex-1 flex-col overflow-x-auto overflow-y-hidden">
             <div
+              key={`week:${weekRange.startKey}`}
               className={cn(
                 'flex min-h-0 flex-1 flex-col',
                 isMobileLayout ? 'min-w-[680px]' : 'w-full min-w-0',
+                navAnimClass,
               )}
             >
               {/* 7-Column Unified Day Header Strip */}
@@ -1247,7 +1264,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ standalone = false }
                             <button
                               key={seg.todo.id}
                               className={cn(
-                                'flex min-w-0 items-center gap-1.5 border px-2 py-1 text-left text-xs shadow-xs/5 transition-colors',
+                                'dt-pressable flex min-w-0 items-center gap-1.5 border px-2 py-1 text-left text-xs shadow-xs/5',
                                 tone.pillClass,
                                 seg.clippedLeft
                                   ? 'ms-0 rounded-s-none border-s-0'
@@ -1351,7 +1368,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ standalone = false }
                               <span className="h-px flex-1 bg-border" />
                               <ChevronDownIcon
                                 aria-hidden="true"
-                                className="size-3 shrink-0 transition-transform duration-150 [[data-panel-open]_&]:rotate-180"
+                                className="dt-chevron size-3 shrink-0 [[data-panel-open]_&]:rotate-180"
                               />
                             </CollapsibleTrigger>
                             <CollapsiblePanel>
@@ -1372,7 +1389,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ standalone = false }
                         {/* Inline Quick Add or Subtle Dashed Add Trigger */}
                         {quickAddDateKey === dateKey ? (
                           <div
-                            className="mt-auto pt-1"
+                            className="dt-pop-in mt-auto pt-1"
                             onClick={(e) => e.stopPropagation()}
                           >
                             <Input
@@ -1442,7 +1459,13 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ standalone = false }
               ))}
             </div>
 
-            <div className="grid min-h-0 flex-1 grid-cols-7 grid-rows-[repeat(6,minmax(88px,1fr))] overflow-y-auto">
+            <div
+              key={`month:${anchorDate.getFullYear()}-${anchorDate.getMonth() + 1}`}
+              className={cn(
+                'grid min-h-0 flex-1 grid-cols-7 grid-rows-[repeat(6,minmax(88px,1fr))] overflow-y-auto',
+                navAnimClass,
+              )}
+            >
               {monthCells.map((cell, idx) => {
                 const dayTodos = sortDayTodos(
                   filteredTodos.filter((t) => todoCoversDate(t, cell.dateKey)),
@@ -1458,12 +1481,13 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ standalone = false }
                   <div
                     key={cell.dateKey}
                     className={cn(
-                      'group/mcell flex min-w-0 cursor-pointer flex-col overflow-hidden border-r border-b transition-colors hover:bg-accent/25',
+                      'group/mcell flex min-w-0 cursor-pointer flex-col overflow-hidden border-r border-b transition-[background-color,box-shadow] duration-[120ms] ease-[var(--dt-ease)] hover:bg-accent/35',
                       isMobileLayout ? 'p-1' : 'p-1.5',
                       idx % 7 === 6 && 'border-r-0',
                       idx >= 35 && 'border-b-0',
                       cell.isToday && 'bg-coss-frame-well/65',
                       !cell.inCurrentMonth && 'bg-muted/25',
+                      quickAddDateKey === cell.dateKey && 'bg-accent/45 ring-1 ring-inset ring-ring/40',
                     )}
                     onClick={() => {
                       setQuickAddDateKey(cell.dateKey);
@@ -1510,6 +1534,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ standalone = false }
                           className="truncate px-1 text-left font-medium text-[10.5px] text-muted-foreground transition-colors hover:text-foreground"
                           onClick={(e) => {
                             e.stopPropagation();
+                            setNavAnim('fade');
                             setAnchorDate(cell.date);
                             setMode('day');
                           }}
@@ -1525,7 +1550,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ standalone = false }
                     {/* Inline Quick Add */}
                     {quickAddDateKey === cell.dateKey && (
                       <div
-                        className="mt-auto pt-1"
+                        className="dt-pop-in mt-auto pt-1"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <Input
@@ -1668,7 +1693,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ standalone = false }
 
             return (
               <ScrollArea className="min-h-0 flex-1" scrollFade>
-                <div className="mx-auto flex w-full max-w-2xl flex-col gap-3.5 p-4">
+                <div
+                  key={`day:${dateKey}`}
+                  className={cn('mx-auto flex w-full max-w-2xl flex-col gap-3.5 p-4', navAnimClass)}
+                >
                   {/* Inline Quick Add */}
                   <div className="flex items-center gap-2 rounded-xl border bg-card p-1.5 ps-3 shadow-xs/5 focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/24">
                     <PlusIcon
@@ -1740,7 +1768,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ standalone = false }
                               </span>
                               <ChevronDownIcon
                                 aria-hidden="true"
-                                className="size-3.5 transition-transform duration-150 [[data-panel-open]_&]:rotate-180"
+                                className="dt-chevron size-3.5 [[data-panel-open]_&]:rotate-180"
                               />
                             </CollapsibleTrigger>
                             <CollapsiblePanel>
@@ -1834,7 +1862,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ standalone = false }
                   return (
                     <div
                       key={todo.id}
-                      className="flex flex-col gap-2 rounded-xl border bg-card p-2.5 shadow-xs/5 transition-colors hover:border-ring/40"
+                      className="dt-card-lift flex flex-col gap-2 rounded-xl border bg-card p-2.5 shadow-xs/5 hover:border-ring/45"
                     >
                       <button
                         className="flex min-w-0 items-start gap-2 text-left"

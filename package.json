@@ -1,6 +1,6 @@
 {
   "name": "desktag",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "private": true,
   "type": "module",
   "description": "DeskTag — Lightweight cross-platform edge-docked sticky-note & todo companion with E2EE WebDAV sync",

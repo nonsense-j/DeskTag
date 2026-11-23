@@ -16,7 +16,7 @@ import {
   UnlockIcon,
   XIcon,
 } from 'lucide-react';
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { openNoteWindow } from '../api/tauri';
 import { cn } from '../lib/utils';
 import { useDeskTagStore } from '../store/useDeskTagStore';
@@ -152,6 +152,15 @@ export const NoteLibraryView: React.FC<NoteLibraryViewProps> = ({ onOpenNote }) 
   const [query, setQuery] = useState('');
   const [kindFilter, setKindFilter] = useState<KindFilter>('all');
   const [selectedGroupId, setSelectedGroupId] = useState<string>('all'); // 'all' | '__ungrouped__' | group.id
+
+  // Subtle view settle on kind/group filter switch (skip initial mount to avoid double-stacking)
+  const filterViewKey = `${kindFilter}:${selectedGroupId}`;
+  const initialFilterKeyRef = useRef(filterViewKey);
+  const hasSwitchedFilterRef = useRef(false);
+  if (filterViewKey !== initialFilterKeyRef.current) {
+    hasSwitchedFilterRef.current = true;
+  }
+  const animateFilterSwitch = hasSwitchedFilterRef.current;
 
   // Create Group Dialog state
   const [createGroupOpen, setCreateGroupOpen] = useState(false);
@@ -425,7 +434,7 @@ export const NoteLibraryView: React.FC<NoteLibraryViewProps> = ({ onOpenNote }) 
                 type="button"
                 onClick={() => setSelectedGroupId('all')}
                 className={cn(
-                  'inline-flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-md border px-2 text-xs whitespace-nowrap transition-colors',
+                  'dt-pressable inline-flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-md border px-2 text-xs whitespace-nowrap',
                   selectedGroupId === 'all'
                     ? 'border-dt-accent-border bg-dt-accent-soft font-medium text-dt-accent-soft-text'
                     : 'border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground',
@@ -438,7 +447,7 @@ export const NoteLibraryView: React.FC<NoteLibraryViewProps> = ({ onOpenNote }) 
                 type="button"
                 onClick={() => setSelectedGroupId('__ungrouped__')}
                 className={cn(
-                  'inline-flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-md border px-2 text-xs whitespace-nowrap transition-colors',
+                  'dt-pressable inline-flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-md border px-2 text-xs whitespace-nowrap',
                   selectedGroupId === '__ungrouped__'
                     ? 'border-dt-accent-border bg-dt-accent-soft font-medium text-dt-accent-soft-text'
                     : 'border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground',
@@ -456,7 +465,7 @@ export const NoteLibraryView: React.FC<NoteLibraryViewProps> = ({ onOpenNote }) 
                     type="button"
                     onClick={() => setSelectedGroupId(grp.id)}
                     className={cn(
-                      'inline-flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-md border px-2 text-xs whitespace-nowrap transition-colors',
+                      'dt-pressable inline-flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-md border px-2 text-xs whitespace-nowrap',
                       active
                         ? 'border-dt-accent-border bg-dt-accent-soft font-medium text-dt-accent-soft-text'
                         : 'border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground',
@@ -482,7 +491,7 @@ export const NoteLibraryView: React.FC<NoteLibraryViewProps> = ({ onOpenNote }) 
                   setNewGroupName('');
                   setCreateGroupOpen(true);
                 }}
-                className="inline-flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-md border border-dashed border-border bg-transparent px-2 text-muted-foreground text-xs whitespace-nowrap transition-colors hover:border-ring/50 hover:bg-accent hover:text-foreground"
+                className="dt-pressable inline-flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-md border border-dashed border-border bg-transparent px-2 text-muted-foreground text-xs whitespace-nowrap hover:border-ring/50 hover:bg-accent hover:text-foreground"
               >
                 <PlusIcon className="size-3" aria-hidden="true" />
                 <span>分组</span>
@@ -497,7 +506,7 @@ export const NoteLibraryView: React.FC<NoteLibraryViewProps> = ({ onOpenNote }) 
 
         {/* Selected Group Management & Privacy Lock Strip (only when a specific group is active) */}
         {selectedGroup && (
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-coss-frame-well px-2.5 py-1.5 text-xs">
+          <div className="dt-reveal flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-coss-frame-well px-2.5 py-1.5 text-xs">
             <div className="flex min-w-0 items-center gap-2">
               <span className="truncate font-semibold text-foreground">
                 {selectedGroup.name}
@@ -602,7 +611,10 @@ export const NoteLibraryView: React.FC<NoteLibraryViewProps> = ({ onOpenNote }) 
 
       {/* Main Note List / Locked Group Gate */}
       <ScrollArea className="flex-1">
-        <div className="p-3">
+        <div
+          key={filterViewKey}
+          className={cn('p-3', animateFilterSwitch && 'dt-view-enter')}
+        >
           {selectedGroup && selectedGroupLocked ? (
             <div className="flex items-center justify-center py-8">
               <Card className="w-full max-w-xs rounded-2xl">
@@ -676,7 +688,7 @@ export const NoteLibraryView: React.FC<NoteLibraryViewProps> = ({ onOpenNote }) 
                     key={note.id}
                     render={<article />}
                     onClick={() => handleOpenNote(note)}
-                    className="group/card cursor-pointer gap-1.5 rounded-xl border bg-card p-3 shadow-xs/5 transition-colors before:rounded-[calc(var(--radius-xl)-1px)] hover:border-ring/40"
+                    className="group/card dt-card-lift cursor-pointer gap-1.5 rounded-xl border bg-card p-3 shadow-xs/5 before:rounded-[calc(var(--radius-xl)-1px)] hover:border-ring/45"
                   >
                     {/* Card Top Row: Kind Icon + Title + Group Badge + Subtle Actions */}
                     <div className="flex items-center justify-between gap-2">

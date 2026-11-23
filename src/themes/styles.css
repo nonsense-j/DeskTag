@@ -144,6 +144,15 @@
   --radius-panel: 14px;
   --radius-card: 12px;
   --radius-control: 9px;
+
+  /* Motion craft tokens (GPU transform/opacity only; zero overshoot, snappy WebView2 pacing) */
+  --m-in: 120ms;
+  --m-out: 100ms;
+  --m-press: 80ms;
+  --m-dock-expand: 200ms;
+  --m-dock-collapse: 155ms;
+  --m-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --m-ease-enter: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .dark {
@@ -261,24 +270,9 @@
   display: flex;
   position: relative;
   opacity: var(--panel-opacity);
-  padding: 2px;
-  background: transparent;
-}
-
-.desktag-shell.dock-right {
-  flex-direction: row;
-}
-
-.desktag-shell.dock-left {
-  flex-direction: row-reverse;
-}
-
-.desktag-shell.dock-top {
-  flex-direction: column-reverse;
-}
-
-.desktag-shell.is-collapsed {
   padding: 0;
+  overflow: hidden;
+  background: transparent;
 }
 
 .desktag-shell.is-mobile {
@@ -287,7 +281,36 @@
   background: var(--bg-panel);
 }
 
-/* Protruding Side Tab Rail */
+.desktag-dock-stage {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  background: transparent;
+}
+
+.desktag-shell.dock-right .desktag-dock-stage {
+  flex-direction: row;
+}
+
+.desktag-shell.dock-left .desktag-dock-stage {
+  flex-direction: row-reverse;
+}
+
+.desktag-shell.dock-top .desktag-dock-stage {
+  flex-direction: column-reverse;
+}
+
+.desktag-shell.is-full-hide-collapsed .desktag-dock-stage {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Protruding Side Tab Rail
+   Cross-axis offsets (padding-top: 56px on left/right, padding-left: 16px on top) MUST stay
+   100% identical between expanded and collapsed-only states so tabs never jump (ΔY = 0 / ΔX = 0). */
 .side-tab-rail {
   display: flex;
   flex-direction: column;
@@ -319,15 +342,22 @@
 }
 
 .side-tab-rail.collapsed-only {
-  padding-top: 12px;
   width: 100%;
   height: 100%;
   justify-content: flex-start;
 }
 
+.side-tab-rail.orientation-left.collapsed-only {
+  align-items: flex-end;
+}
+
+.side-tab-rail.orientation-right.collapsed-only {
+  align-items: flex-start;
+}
+
 .side-tab-rail.orientation-top.collapsed-only {
+  align-items: flex-start;
   padding-top: 0;
-  padding-left: 8px;
 }
 
 .side-tab-btn {
@@ -410,10 +440,23 @@
   position: relative;
 }
 
+.desktag-shell.dock-right .desktag-panel-card {
+  margin: 2px 2px 2px 0;
+}
+
+.desktag-shell.dock-left .desktag-panel-card {
+  margin: 2px 0 2px 2px;
+}
+
+.desktag-shell.dock-top .desktag-panel-card {
+  margin: 2px 2px 0 2px;
+}
+
 .desktag-shell.is-mobile .desktag-panel-card {
   border: none;
   border-radius: 0;
   box-shadow: none;
+  margin: 0;
 }
 
 .desktag-panel-body {
@@ -423,6 +466,15 @@
   flex-direction: column;
   overflow: hidden;
   position: relative;
+}
+
+.desktag-view-stage {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 /* ==========================================================================
@@ -2902,4 +2954,439 @@
   margin-top: 4px;
 }
 
+}
+
+/* ==========================================================================
+   GPU-Composited Edge-Docking Slide Transitions, Tab Micro-Interactions,
+   View Cross-Fade & Toast Entrance (transform / opacity only; zero overshoot)
+   ========================================================================== */
+
+@keyframes desktag-dock-expand-right {
+  from {
+    transform: translate3d(calc(100% - var(--dock-rail-w, 64px)), 0, 0);
+  }
+  to {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes desktag-dock-collapse-right {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(calc(100% - var(--dock-rail-w, 64px)), 0, 0);
+  }
+}
+
+@keyframes desktag-dock-expand-left {
+  from {
+    transform: translate3d(calc(-100% + var(--dock-rail-w, 64px)), 0, 0);
+  }
+  to {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes desktag-dock-collapse-left {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(calc(-100% + var(--dock-rail-w, 64px)), 0, 0);
+  }
+}
+
+@keyframes desktag-dock-expand-top {
+  from {
+    transform: translate3d(0, calc(-100% + var(--dock-rail-h, 40px)), 0);
+  }
+  to {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes desktag-dock-collapse-top {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(0, calc(-100% + var(--dock-rail-h, 40px)), 0);
+  }
+}
+
+/* Full-hide modes (right_hide / left_hide / top_hide) */
+@keyframes desktag-dock-expand-right-hide {
+  from {
+    transform: translate3d(100%, 0, 0);
+    opacity: 0.9;
+  }
+  to {
+    transform: translate3d(0, 0, 0);
+    opacity: 1;
+  }
+}
+
+@keyframes desktag-dock-collapse-right-hide {
+  from {
+    transform: translate3d(0, 0, 0);
+    opacity: 1;
+  }
+  to {
+    transform: translate3d(100%, 0, 0);
+    opacity: 0.9;
+  }
+}
+
+@keyframes desktag-dock-expand-left-hide {
+  from {
+    transform: translate3d(-100%, 0, 0);
+    opacity: 0.9;
+  }
+  to {
+    transform: translate3d(0, 0, 0);
+    opacity: 1;
+  }
+}
+
+@keyframes desktag-dock-collapse-left-hide {
+  from {
+    transform: translate3d(0, 0, 0);
+    opacity: 1;
+  }
+  to {
+    transform: translate3d(-100%, 0, 0);
+    opacity: 0.9;
+  }
+}
+
+@keyframes desktag-dock-expand-top-hide {
+  from {
+    transform: translate3d(0, -100%, 0);
+    opacity: 0.9;
+  }
+  to {
+    transform: translate3d(0, 0, 0);
+    opacity: 1;
+  }
+}
+
+@keyframes desktag-dock-collapse-top-hide {
+  from {
+    transform: translate3d(0, 0, 0);
+    opacity: 1;
+  }
+  to {
+    transform: translate3d(0, -100%, 0);
+    opacity: 0.9;
+  }
+}
+
+@keyframes desktag-card-clarity {
+  from {
+    opacity: 0.92;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes desktag-view-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 3px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes desktag-toast-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(-50%, 6px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+@keyframes desktag-reduced-stage-in {
+  from {
+    opacity: 0.94;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes desktag-reduced-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes desktag-reduced-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes desktag-toast-enter-reduced {
+  from {
+    opacity: 0;
+    transform: translate3d(-50%, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+/* Promote compositor layer ONLY during active dock slide — released immediately when idle */
+.desktag-dock-stage.is-expanding,
+.desktag-dock-stage.is-collapsing {
+  will-change: transform;
+}
+
+/* Right dock transitions */
+.desktag-shell.dock-right .desktag-dock-stage.is-expanding {
+  animation: desktag-dock-expand-right var(--m-dock-expand) var(--m-ease-enter) both;
+}
+
+.desktag-shell.dock-right .desktag-dock-stage.is-collapsing {
+  animation: desktag-dock-collapse-right var(--m-dock-collapse) var(--m-ease) forwards;
+}
+
+.desktag-shell.dock-right .desktag-dock-stage.is-full-hide.is-expanding {
+  animation: desktag-dock-expand-right-hide var(--m-dock-expand) var(--m-ease-enter) both;
+}
+
+.desktag-shell.dock-right .desktag-dock-stage.is-full-hide.is-collapsing {
+  animation: desktag-dock-collapse-right-hide var(--m-dock-collapse) var(--m-ease) forwards;
+}
+
+/* Left dock transitions */
+.desktag-shell.dock-left .desktag-dock-stage.is-expanding {
+  animation: desktag-dock-expand-left var(--m-dock-expand) var(--m-ease-enter) both;
+}
+
+.desktag-shell.dock-left .desktag-dock-stage.is-collapsing {
+  animation: desktag-dock-collapse-left var(--m-dock-collapse) var(--m-ease) forwards;
+}
+
+.desktag-shell.dock-left .desktag-dock-stage.is-full-hide.is-expanding {
+  animation: desktag-dock-expand-left-hide var(--m-dock-expand) var(--m-ease-enter) both;
+}
+
+.desktag-shell.dock-left .desktag-dock-stage.is-full-hide.is-collapsing {
+  animation: desktag-dock-collapse-left-hide var(--m-dock-collapse) var(--m-ease) forwards;
+}
+
+/* Top dock transitions */
+.desktag-shell.dock-top .desktag-dock-stage.is-expanding {
+  animation: desktag-dock-expand-top var(--m-dock-expand) var(--m-ease-enter) both;
+}
+
+.desktag-shell.dock-top .desktag-dock-stage.is-collapsing {
+  animation: desktag-dock-collapse-top var(--m-dock-collapse) var(--m-ease) forwards;
+}
+
+.desktag-shell.dock-top .desktag-dock-stage.is-full-hide.is-expanding {
+  animation: desktag-dock-expand-top-hide var(--m-dock-expand) var(--m-ease-enter) both;
+}
+
+.desktag-shell.dock-top .desktag-dock-stage.is-full-hide.is-collapsing {
+  animation: desktag-dock-collapse-top-hide var(--m-dock-collapse) var(--m-ease) forwards;
+}
+
+/* Subtle panel card entrance clarity; disable card clicks while collapsing (tabs stay interactive) */
+.desktag-dock-stage.is-expanding .desktag-panel-card {
+  animation: desktag-card-clarity 150ms var(--m-ease-enter) both;
+}
+
+.desktag-dock-stage.is-collapsing .desktag-panel-card {
+  pointer-events: none;
+}
+
+/* View switch cross-fade + 3px rise (backwards fill only so no lingering transform containing block) */
+.desktag-view-stage.desktag-view-enter {
+  animation: desktag-view-enter 135ms var(--m-ease-enter) backwards;
+}
+
+/* Toast pill smooth entrance */
+.desktag-toast-pill {
+  transform: translate3d(-50%, 0, 0);
+  animation: desktag-toast-enter 150ms var(--m-ease-enter) both;
+}
+
+/* Side tab micro-interactions (zero idle will-change / transform layer; GPU only during active hover/press) */
+.side-tab-item {
+  transition:
+    transform var(--m-out) var(--m-ease),
+    background-color var(--m-out) var(--m-ease),
+    color var(--m-out) var(--m-ease),
+    border-color var(--m-out) var(--m-ease),
+    box-shadow var(--m-out) var(--m-ease);
+}
+
+.side-tab-rail.orientation-left .side-tab-item {
+  transform-origin: right center;
+}
+
+.side-tab-rail.orientation-right .side-tab-item {
+  transform-origin: left center;
+}
+
+.side-tab-rail.orientation-top .side-tab-item {
+  transform-origin: center top;
+}
+
+/* Instant focus ring (no transition per motion.md) */
+.side-tab-item:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .side-tab-item:hover {
+    transition-duration: var(--m-in);
+  }
+
+  .side-tab-rail.collapsed-only.orientation-left .side-tab-item:hover {
+    transform: translate3d(-3px, 0, 0);
+    box-shadow: -3px 3px 12px rgba(0, 0, 0, 0.12);
+  }
+
+  .side-tab-rail.collapsed-only.orientation-right .side-tab-item:hover {
+    transform: translate3d(3px, 0, 0);
+    box-shadow: 3px 3px 12px rgba(0, 0, 0, 0.12);
+  }
+
+  .side-tab-rail.collapsed-only.orientation-top .side-tab-item:hover {
+    transform: translate3d(0, 3px, 0);
+    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.12);
+  }
+
+  .side-tab-rail.collapsed-only .side-tab-item:not(.is-active):hover {
+    border-color: var(--border-strong);
+  }
+
+  .dark .side-tab-rail.collapsed-only.orientation-left .side-tab-item:hover {
+    box-shadow: -3px 3px 14px rgba(0, 0, 0, 0.38);
+  }
+
+  .dark .side-tab-rail.collapsed-only.orientation-right .side-tab-item:hover {
+    box-shadow: 3px 3px 14px rgba(0, 0, 0, 0.38);
+  }
+
+  .dark .side-tab-rail.collapsed-only.orientation-top .side-tab-item:hover {
+    box-shadow: 0 3px 14px rgba(0, 0, 0, 0.38);
+  }
+}
+
+/* Keyboard focus mirrors collapsed inward cue */
+.side-tab-rail.collapsed-only.orientation-left .side-tab-item:focus-visible {
+  transform: translate3d(-3px, 0, 0);
+}
+
+.side-tab-rail.collapsed-only.orientation-right .side-tab-item:focus-visible {
+  transform: translate3d(3px, 0, 0);
+}
+
+.side-tab-rail.collapsed-only.orientation-top .side-tab-item:focus-visible {
+  transform: translate3d(0, 3px, 0);
+}
+
+/* Tactile 80ms press feedback */
+.side-tab-item:active {
+  transform: scale(0.985);
+  transition-duration: var(--m-press);
+}
+
+.side-tab-rail.collapsed-only.orientation-left .side-tab-item:active {
+  transform: translate3d(-1.5px, 0, 0) scale(0.985);
+  transition-duration: var(--m-press);
+}
+
+.side-tab-rail.collapsed-only.orientation-right .side-tab-item:active {
+  transform: translate3d(1.5px, 0, 0) scale(0.985);
+  transition-duration: var(--m-press);
+}
+
+.side-tab-rail.collapsed-only.orientation-top .side-tab-item:active {
+  transform: translate3d(0, 1.5px, 0) scale(0.985);
+  transition-duration: var(--m-press);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .desktag-dock-stage.is-expanding,
+  .desktag-dock-stage.is-collapsing {
+    will-change: auto;
+  }
+
+  .desktag-shell.dock-right .desktag-dock-stage.is-expanding,
+  .desktag-shell.dock-left .desktag-dock-stage.is-expanding,
+  .desktag-shell.dock-top .desktag-dock-stage.is-expanding,
+  .desktag-shell.dock-right .desktag-dock-stage.is-full-hide.is-expanding,
+  .desktag-shell.dock-left .desktag-dock-stage.is-full-hide.is-expanding,
+  .desktag-shell.dock-top .desktag-dock-stage.is-full-hide.is-expanding {
+    transform: none;
+    animation: desktag-reduced-stage-in 100ms var(--m-ease) both;
+  }
+
+  .desktag-shell.dock-right .desktag-dock-stage.is-collapsing,
+  .desktag-shell.dock-left .desktag-dock-stage.is-collapsing,
+  .desktag-shell.dock-top .desktag-dock-stage.is-collapsing {
+    transform: none;
+    animation: none;
+  }
+
+  .desktag-shell.dock-right .desktag-dock-stage.is-full-hide.is-collapsing,
+  .desktag-shell.dock-left .desktag-dock-stage.is-full-hide.is-collapsing,
+  .desktag-shell.dock-top .desktag-dock-stage.is-full-hide.is-collapsing {
+    transform: none;
+    animation: desktag-reduced-fade-out 100ms var(--m-ease) forwards;
+  }
+
+  .desktag-dock-stage.is-expanding .desktag-panel-card {
+    animation: desktag-reduced-fade-in 100ms var(--m-ease) both;
+  }
+
+  .desktag-dock-stage.is-collapsing .desktag-panel-card {
+    animation: desktag-reduced-fade-out 100ms var(--m-ease) forwards;
+  }
+
+  .desktag-view-stage.desktag-view-enter {
+    animation: desktag-reduced-fade-in 100ms var(--m-ease) backwards;
+  }
+
+  .desktag-toast-pill {
+    animation: desktag-toast-enter-reduced 100ms var(--m-ease) both;
+  }
+
+  .side-tab-rail .side-tab-item,
+  .side-tab-rail .side-tab-item:hover,
+  .side-tab-rail .side-tab-item:active,
+  .side-tab-rail .side-tab-item:focus-visible,
+  .side-tab-rail.collapsed-only.orientation-left .side-tab-item:hover,
+  .side-tab-rail.collapsed-only.orientation-right .side-tab-item:hover,
+  .side-tab-rail.collapsed-only.orientation-top .side-tab-item:hover,
+  .side-tab-rail.collapsed-only.orientation-left .side-tab-item:focus-visible,
+  .side-tab-rail.collapsed-only.orientation-right .side-tab-item:focus-visible,
+  .side-tab-rail.collapsed-only.orientation-top .side-tab-item:focus-visible,
+  .side-tab-rail.collapsed-only.orientation-left .side-tab-item:active,
+  .side-tab-rail.collapsed-only.orientation-right .side-tab-item:active,
+  .side-tab-rail.collapsed-only.orientation-top .side-tab-item:active {
+    transform: none;
+    transition-property: background-color, color, border-color, box-shadow;
+  }
 }

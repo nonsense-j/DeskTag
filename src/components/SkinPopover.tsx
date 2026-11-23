@@ -58,18 +58,20 @@ export const SkinPopover: React.FC<SkinPopoverProps> = ({
         onClick={() => updateSyncedSettings({ skinId: skin.id })}
         aria-pressed={selected}
         className={cn(
-          'group relative flex min-w-0 items-center gap-2 rounded-lg border px-2 py-1.5 text-left text-xs transition-all outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-popover',
+          'dt-pressable group relative flex min-w-0 items-center gap-2 rounded-lg border px-2 py-1.5 text-left text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-popover',
           selected
-            ? 'border-dt-accent bg-dt-accent-soft font-semibold text-dt-accent-soft-text shadow-xs/5'
+            ? 'border-dt-accent bg-dt-accent-soft font-semibold text-dt-accent-soft-text shadow-xs/5 ring-1 ring-dt-accent/25'
             : 'border-border bg-card font-medium text-foreground hover:border-dt-accent-border/70 hover:bg-accent',
         )}
       >
-        <SkinSwatchTile swatch={skin.swatch} size={24} />
+        <span className="inline-flex shrink-0 transition-transform duration-[120ms] ease-[var(--dt-ease)] group-hover:scale-[1.04]">
+          <SkinSwatchTile swatch={skin.swatch} size={24} />
+        </span>
         <span className="min-w-0 flex-1 truncate">{skin.name}</span>
         {selected && (
           <CheckIcon
             aria-hidden="true"
-            className="size-3.5 shrink-0 text-dt-accent-soft-text"
+            className="dt-check-pop size-3.5 shrink-0 text-dt-accent-soft-text"
             strokeWidth={2.25}
           />
         )}
@@ -172,7 +174,7 @@ export const SkinPopover: React.FC<SkinPopoverProps> = ({
         />
         <div
           aria-label="切换皮肤"
-          className="absolute top-12 right-3 z-50 w-[324px] max-w-[calc(100%-24px)] rounded-xl border bg-popover not-dark:bg-clip-padding p-3.5 text-popover-foreground shadow-lg/5 before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-xl)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] dark:before:shadow-[0_-1px_--theme(--color-white/6%)]"
+          className="dt-pop-in absolute top-12 right-3 z-50 w-[324px] max-w-[calc(100%-24px)] rounded-xl border bg-popover not-dark:bg-clip-padding p-3.5 text-popover-foreground shadow-lg/5 before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-xl)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] dark:before:shadow-[0_-1px_--theme(--color-white/6%)]"
           role="dialog"
         >
           {bodyContent}

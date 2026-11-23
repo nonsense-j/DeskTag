@@ -336,6 +336,34 @@ mod imp {
         });
     }
 
+    /// Atomically move and resize a Win32 window in a single `SetWindowPos` call so
+    /// edge-docked windows never paint an intermediate shifted/oversized frame.
+    pub fn set_window_rect(
+        window: &WebviewWindow,
+        x: i32,
+        y: i32,
+        width: u32,
+        height: u32,
+    ) -> bool {
+        let Ok(hwnd) = window.hwnd() else {
+            return false;
+        };
+        let w = width.min(i32::MAX as u32) as i32;
+        let h = height.min(i32::MAX as u32) as i32;
+        unsafe {
+            SetWindowPos(
+                HWND(hwnd.0),
+                None,
+                x,
+                y,
+                w,
+                h,
+                SWP_NOZORDER | SWP_NOACTIVATE,
+            )
+            .is_ok()
+        }
+    }
+
     /// Toggle `WS_EX_NOACTIVATE` on a Win32 window so collapsed edge tabs never steal
     /// keyboard focus from active apps or trigger an orange taskbar flash.
     pub fn set_window_no_activate(window: &WebviewWindow, enable: bool) {
@@ -442,7 +470,7 @@ pub use imp::{
     get_monitor_work_area, get_monitor_work_area_at_point, init_window,
     merge_webview2_browser_args, resume_webview, schedule_hidden_trim, set_memory_target_low,
     set_memory_usage_low, set_memory_usage_normal, set_webview_memory_low, set_window_no_activate,
-    suspend_webview, trim_process_working_sets,
+    set_window_rect, suspend_webview, trim_process_working_sets,
 };
 
 #[cfg(all(test, target_os = "windows"))]
