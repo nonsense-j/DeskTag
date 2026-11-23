@@ -6,8 +6,6 @@ import {
   BoldIcon,
   CheckIcon,
   CheckSquareIcon,
-  ChevronDownIcon,
-  ChevronRightIcon,
   ClockIcon,
   CodeIcon,
   Columns3Icon,
@@ -38,7 +36,7 @@ import {
   Trash2Icon,
   XIcon,
 } from 'lucide-react';
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   isTauriRuntime,
   openAttachment,
@@ -56,6 +54,39 @@ import type {
 } from '../types/models';
 import { exportDeskTagDocument } from '../utils/exporter';
 import { formatTimeHMS, formatTimestampYMDHM, pad2 } from '../utils/lunar';
+import {
+  BlockDragDock,
+  BlockDropIndicator,
+  SortableBlockItem,
+} from './note/SortableBlockItem';
+import {
+  CellAutoTextarea,
+  type FocusRequest,
+  TyporaTextBlock,
+} from './note/TyporaBlockComponents';
+import {
+  type CaretTarget,
+  type HeadingLevel,
+  type NoteBlock,
+  applyHeadingFormatToBlocks,
+  applyLiveTextBlockEdit,
+  computeBlockHierarchyLayout,
+  computeBlockVisibility,
+  computeTableColumnWidths,
+  createBlockId,
+  getTextBlockRawMarkdown,
+  isFencedCodeParagraph,
+  mergeOrRemoveOnBackspaceAtStart,
+  normalizeParagraphOnBlur,
+  parseContentToBlocks,
+  pruneCollapsedHeadings,
+  reorderVisibleBlocks,
+  serializeBlocksToMarkdown,
+  splitHeadingOnEnter,
+  splitParagraphOnEnter,
+  uncollapseAncestorsOfBlock,
+} from './note/markdownBlocks';
+import { useBlockDragReorder } from './note/useBlockDragReorder';
 import { Alert, AlertDescription } from './ui/alert';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
@@ -118,132 +149,6 @@ export interface NoteViewProps {
   standalone?: boolean;
 }
 
-// ---------------------------------------------------------------------------
-// Structured Markdown Block Parser & Serializer (headings, tables, paragraphs)
-// ---------------------------------------------------------------------------
-
-type NoteBlock =
-  | { id: string; type: 'heading'; level: 1 | 2 | 3; text: string }
-  | { id: string; type: 'table'; rows: string[][] }
-  | { id: string; type: 'paragraph'; text: string };
-
-function isTableSeparatorLine(line: string): boolean {
-  const trimmed = line.trim();
-  if (!trimmed.includes('|')) return false;
-  const cleaned = trimmed.replace(/^\|/, '').replace(/\|$/, '');
-  const parts = cleaned.split('|').map((s) => s.trim());
-  return parts.length >= 2 && parts.every((p) => /^:?-{2,}:?$/.test(p));
-}
-
-function splitTableRow(line: string): string[] {
-  const trimmed = line.trim().replace(/^\|/, '').replace(/\|$/, '');
-  return trimmed.split('|').map((c) => c.trim());
-}
-
-function parseContentToBlocks(markdown: string): NoteBlock[] {
-  const rawLines = (markdown || '').replace(/\r\n/g, '\n').split('\n');
-  const blocks: NoteBlock[] = [];
-  let paraBuf: string[] = [];
-  let idx = 0;
-  let blockSeq = 0;
-
-  const flushPara = () => {
-    if (paraBuf.length === 0) return;
-    const text = paraBuf.join('\n').trimEnd();
-    if (text.length > 0) {
-      blocks.push({ id: `blk_${blockSeq++}`, type: 'paragraph', text });
-    }
-    paraBuf = [];
-  };
-
-  while (idx < rawLines.length) {
-    const line = rawLines[idx];
-
-    // Heading (#, ##, ###)
-    const headingMatch = /^(#{1,3})\s+(.*)$/.exec(line);
-    if (headingMatch) {
-      flushPara();
-      const level = Math.min(3, headingMatch[1].length) as 1 | 2 | 3;
-      blocks.push({
-        id: `blk_${blockSeq++}`,
-        type: 'heading',
-        level,
-        text: headingMatch[2],
-      });
-      idx += 1;
-      continue;
-    }
-
-    // Pipe Table (header + separator + body rows)
-    if (
-      line.includes('|') &&
-      idx + 1 < rawLines.length &&
-      isTableSeparatorLine(rawLines[idx + 1])
-    ) {
-      flushPara();
-      const headerCells = splitTableRow(line);
-      const colCount = Math.max(2, headerCells.length);
-      const normalize = (cells: string[]) => {
-        const out = cells.slice(0, colCount);
-        while (out.length < colCount) out.push('');
-        return out;
-      };
-      const rows: string[][] = [normalize(headerCells)];
-      idx += 2;
-      while (idx < rawLines.length && rawLines[idx].trim().includes('|')) {
-        rows.push(normalize(splitTableRow(rawLines[idx])));
-        idx += 1;
-      }
-      if (rows.length < 2) {
-        rows.push(new Array<string>(colCount).fill(''));
-      }
-      blocks.push({ id: `blk_${blockSeq++}`, type: 'table', rows });
-      continue;
-    }
-
-    // Blank line splits paragraphs
-    if (line.trim() === '') {
-      flushPara();
-      idx += 1;
-      continue;
-    }
-
-    paraBuf.push(line);
-    idx += 1;
-  }
-
-  flushPara();
-
-  if (blocks.length === 0) {
-    blocks.push({ id: 'blk_0', type: 'paragraph', text: '' });
-  }
-  return blocks;
-}
-
-function serializeBlocksToMarkdown(blocks: NoteBlock[]): string {
-  return blocks
-    .map((blk) => {
-      if (blk.type === 'heading') {
-        return `${'#'.repeat(blk.level)} ${blk.text}`;
-      }
-      if (blk.type === 'table') {
-        if (blk.rows.length === 0) return '';
-        const colCount = Math.max(1, blk.rows[0].length);
-        const sanitizeCell = (c: string) =>
-          c.replace(/\r?\n+/g, ' ').replace(/\|/g, '｜');
-        const header = `| ${blk.rows[0].map(sanitizeCell).join(' | ')} |`;
-        const sep = `| ${new Array<string>(colCount).fill('---').join(' | ')} |`;
-        const body = blk.rows
-          .slice(1)
-          .map((r) => `| ${r.map(sanitizeCell).join(' | ')} |`);
-        return [header, sep, ...body].join('\n');
-      }
-      return blk.text;
-    })
-    .filter((s, i, arr) => s.length > 0 || (arr.length === 1 && i === 0))
-    .join('\n\n');
-}
-
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
@@ -270,259 +175,6 @@ function readFileAsBase64(file: File): Promise<string> {
     reader.readAsDataURL(file);
   });
 }
-
-function computeTableColumnWidths(rows: string[][]): number[] {
-  const colCount = rows[0]?.length ?? 0;
-  if (colCount === 0) return [];
-  const weights = new Array<number>(colCount).fill(6);
-  for (let c = 0; c < colCount; c += 1) {
-    let maxLen = 0;
-    for (const row of rows) {
-      const len = (row[c] ?? '').trim().length;
-      if (len > maxLen) maxLen = len;
-    }
-    weights[c] = 6 + Math.min(22, Math.max(3, maxLen));
-  }
-  const total = weights.reduce((sum, w) => sum + w, 0) || 1;
-  return weights.map((w) => Math.round((w / total) * 1000) / 10);
-}
-
-// ---------------------------------------------------------------------------
-// Safe Inline & Paragraph Markdown Renderer (for crisp non-editing view)
-// ---------------------------------------------------------------------------
-
-function renderInlineMarkdown(text: string): React.ReactNode[] {
-  const nodes: React.ReactNode[] = [];
-  const pattern = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*\n]+\*)/g;
-  let lastIdx = 0;
-  let match: RegExpExecArray | null = pattern.exec(text);
-  let key = 0;
-
-  while (match !== null) {
-    if (match.index > lastIdx) {
-      nodes.push(text.slice(lastIdx, match.index));
-    }
-    const token = match[0];
-    if (token.startsWith('`') && token.endsWith('`')) {
-      nodes.push(
-        <code
-          key={`c-${key++}`}
-          className="mx-0.5 inline-block rounded border border-border bg-muted px-1.5 py-px align-baseline font-mono text-[0.84em] leading-[1.4] text-foreground"
-        >
-          {token.slice(1, -1)}
-        </code>,
-      );
-    } else if (token.startsWith('**') && token.endsWith('**')) {
-      nodes.push(
-        <strong key={`b-${key++}`} className="font-semibold text-foreground">
-          {token.slice(2, -2)}
-        </strong>,
-      );
-    } else if (token.startsWith('*') && token.endsWith('*')) {
-      nodes.push(
-        <em key={`i-${key++}`} className="italic">
-          {token.slice(1, -1)}
-        </em>,
-      );
-    } else {
-      nodes.push(token);
-    }
-    lastIdx = match.index + token.length;
-    match = pattern.exec(text);
-  }
-
-  if (lastIdx < text.length) {
-    nodes.push(text.slice(lastIdx));
-  }
-  return nodes;
-}
-
-type ParsedSegment =
-  | { kind: 'code'; content: string }
-  | { kind: 'ul'; items: string[] }
-  | { kind: 'ol'; items: Array<{ num: string; text: string }> }
-  | { kind: 'quote'; lines: string[] }
-  | { kind: 'text'; lines: string[] };
-
-function parseParagraphSegments(text: string): ParsedSegment[] {
-  const lines = text.split('\n');
-  const segments: ParsedSegment[] = [];
-  let i = 0;
-
-  while (i < lines.length) {
-    const line = lines[i];
-
-    // Fenced code block
-    if (/^\s*```/.test(line)) {
-      const codeLines: string[] = [];
-      i += 1;
-      while (i < lines.length && !/^\s*```\s*$/.test(lines[i])) {
-        codeLines.push(lines[i]);
-        i += 1;
-      }
-      if (i < lines.length) i += 1;
-      segments.push({ kind: 'code', content: codeLines.join('\n') });
-      continue;
-    }
-
-    // Bullet list
-    const ulMatch = /^\s*[-*•]\s+(.*)$/.exec(line);
-    if (ulMatch) {
-      const items: string[] = [ulMatch[1]];
-      i += 1;
-      while (i < lines.length) {
-        const nextUl = /^\s*[-*•]\s+(.*)$/.exec(lines[i]);
-        if (!nextUl) break;
-        items.push(nextUl[1]);
-        i += 1;
-      }
-      segments.push({ kind: 'ul', items });
-      continue;
-    }
-
-    // Ordered list
-    const olMatch = /^\s*(\d+)\.\s+(.*)$/.exec(line);
-    if (olMatch) {
-      const items: Array<{ num: string; text: string }> = [
-        { num: olMatch[1], text: olMatch[2] },
-      ];
-      i += 1;
-      while (i < lines.length) {
-        const nextOl = /^\s*(\d+)\.\s+(.*)$/.exec(lines[i]);
-        if (!nextOl) break;
-        items.push({ num: nextOl[1], text: nextOl[2] });
-        i += 1;
-      }
-      segments.push({ kind: 'ol', items });
-      continue;
-    }
-
-    // Blockquote
-    const quoteMatch = /^\s*>\s?(.*)$/.exec(line);
-    if (quoteMatch) {
-      const qLines: string[] = [quoteMatch[1]];
-      i += 1;
-      while (i < lines.length) {
-        const nextQ = /^\s*>\s?(.*)$/.exec(lines[i]);
-        if (!nextQ) break;
-        qLines.push(nextQ[1]);
-        i += 1;
-      }
-      segments.push({ kind: 'quote', lines: qLines });
-      continue;
-    }
-
-    // Plain text lines
-    const textLines: string[] = [line];
-    i += 1;
-    while (
-      i < lines.length &&
-      !/^\s*```/.test(lines[i]) &&
-      !/^\s*[-*•]\s+/.test(lines[i]) &&
-      !/^\s*\d+\.\s+/.test(lines[i]) &&
-      !/^\s*>\s?/.test(lines[i])
-    ) {
-      textLines.push(lines[i]);
-      i += 1;
-    }
-    segments.push({ kind: 'text', lines: textLines });
-  }
-
-  return segments;
-}
-
-const RichParagraphDisplay: React.FC<{
-  text: string;
-  onActivate: () => void;
-}> = ({ text, onActivate }) => {
-  const segments = useMemo(() => parseParagraphSegments(text), [text]);
-
-  return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={onActivate}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onActivate();
-        }
-      }}
-      className="group -mx-1.5 cursor-text rounded-md px-1.5 py-0.5 text-[length:var(--font-body-size)] leading-[1.7] text-foreground transition-colors hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-    >
-      <div className="flex flex-col gap-1.5">
-        {segments.map((seg, idx) => {
-          if (seg.kind === 'code') {
-            return (
-              <pre
-                key={idx}
-                className="overflow-x-auto rounded-lg border bg-coss-frame-well px-3 py-2 font-mono text-xs leading-relaxed text-foreground"
-              >
-                <code>{seg.content}</code>
-              </pre>
-            );
-          }
-          if (seg.kind === 'ul') {
-            return (
-              <ul key={idx} className="flex flex-col gap-1.5 pl-0.5">
-                {seg.items.map((item, liIdx) => (
-                  <li key={liIdx} className="flex items-start gap-2.5">
-                    <span
-                      aria-hidden="true"
-                      className="mt-[0.62em] size-1.5 shrink-0 rounded-full bg-muted-foreground/55"
-                    />
-                    <span className="min-w-0 flex-1 break-words">
-                      {renderInlineMarkdown(item)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            );
-          }
-          if (seg.kind === 'ol') {
-            return (
-              <ol key={idx} className="flex flex-col gap-1.5 pl-0.5">
-                {seg.items.map((item, liIdx) => (
-                  <li key={liIdx} className="flex items-start gap-2">
-                    <span className="min-w-4 shrink-0 text-right font-medium text-muted-foreground text-xs leading-[1.9] tabular-nums">
-                      {item.num}.
-                    </span>
-                    <span className="min-w-0 flex-1 break-words">
-                      {renderInlineMarkdown(item.text)}
-                    </span>
-                  </li>
-                ))}
-              </ol>
-            );
-          }
-          if (seg.kind === 'quote') {
-            return (
-              <blockquote
-                key={idx}
-                className="border-dt-accent/50 border-l-2 py-0.5 pl-3 text-muted-foreground"
-              >
-                {seg.lines.map((qLine, qIdx) => (
-                  <p key={qIdx} className="break-words">
-                    {renderInlineMarkdown(qLine)}
-                  </p>
-                ))}
-              </blockquote>
-            );
-          }
-          return (
-            <div key={idx} className="flex flex-col gap-0.5">
-              {seg.lines.map((tLine, tIdx) => (
-                <p key={tIdx} className="break-words whitespace-pre-wrap">
-                  {renderInlineMarkdown(tLine)}
-                </p>
-              ))}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-};
 
 // ---------------------------------------------------------------------------
 // Lazy Inline Attachment Preview (Image / Audio / File)
@@ -646,129 +298,6 @@ const AttachmentMedia: React.FC<{
 };
 
 // ---------------------------------------------------------------------------
-// Auto-growing Textareas (for paragraphs & wrapping table cells)
-// ---------------------------------------------------------------------------
-
-const AutoTextarea: React.FC<{
-  value: string;
-  onChange: (next: string) => void;
-  onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
-  onFocus?: () => void;
-  onBlur?: () => void;
-  placeholder?: string;
-  autoFocus?: boolean;
-  className?: string;
-}> = ({
-  value,
-  onChange,
-  onKeyDown,
-  onFocus,
-  onBlur,
-  placeholder,
-  autoFocus = false,
-  className,
-}) => {
-  const ref = useRef<HTMLTextAreaElement | null>(null);
-
-  const syncHeight = useCallback(() => {
-    const el = ref.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${Math.max(24, el.scrollHeight)}px`;
-  }, []);
-
-  useLayoutEffect(() => {
-    syncHeight();
-  }, [value, syncHeight]);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const ro = new ResizeObserver(syncHeight);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [syncHeight]);
-
-  useEffect(() => {
-    if (autoFocus && ref.current) {
-      const el = ref.current;
-      el.focus();
-      const len = el.value.length;
-      el.setSelectionRange(len, len);
-    }
-  }, [autoFocus]);
-
-  return (
-    <textarea
-      ref={ref}
-      rows={1}
-      cols={1}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      onKeyDown={onKeyDown}
-      onFocus={onFocus}
-      onBlur={onBlur}
-      placeholder={placeholder}
-      className={cn(
-        'block w-full min-w-0 resize-none overflow-hidden border-none bg-transparent py-0.5 font-[inherit] text-[length:var(--font-body-size)] leading-[1.7] text-foreground outline-none placeholder:text-muted-foreground/60',
-        className,
-      )}
-    />
-  );
-};
-
-const CellAutoTextarea: React.FC<{
-  value: string;
-  onChange: (next: string) => void;
-  onFocus?: () => void;
-  placeholder?: string;
-  className?: string;
-}> = ({ value, onChange, onFocus, placeholder, className }) => {
-  const ref = useRef<HTMLTextAreaElement | null>(null);
-
-  const syncHeight = useCallback(() => {
-    const el = ref.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${Math.max(20, el.scrollHeight)}px`;
-  }, []);
-
-  useLayoutEffect(() => {
-    syncHeight();
-  }, [value, syncHeight]);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const ro = new ResizeObserver(syncHeight);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [syncHeight]);
-
-  return (
-    <textarea
-      ref={ref}
-      rows={1}
-      cols={1}
-      value={value}
-      onFocus={onFocus}
-      onChange={(e) => onChange(e.target.value.replace(/\r?\n/g, ' '))}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-          e.preventDefault();
-          e.currentTarget.blur();
-        }
-      }}
-      placeholder={placeholder}
-      className={cn(
-        'block w-full min-w-0 resize-none overflow-hidden whitespace-pre-wrap break-words border-none bg-transparent p-0 font-[inherit] text-xs leading-[1.55] outline-none placeholder:text-muted-foreground/45',
-        className,
-      )}
-    />
-  );
-};
-
-// ---------------------------------------------------------------------------
 // Main NoteView Component
 // ---------------------------------------------------------------------------
 
@@ -828,21 +357,50 @@ export const NoteView: React.FC<NoteViewProps> = ({ noteId, standalone = false }
   const [blocks, setBlocks] = useState<NoteBlock[]>(() =>
     parseContentToBlocks(note?.content ?? ''),
   );
+  const blocksRef = useRef<NoteBlock[]>(blocks);
+  blocksRef.current = blocks;
+
   const [focusedBlockId, setFocusedBlockId] = useState<string | null>(null);
+  const focusedBlockIdRef = useRef<string | null>(focusedBlockId);
+  focusedBlockIdRef.current = focusedBlockId;
+
+  const [focusRequest, setFocusRequest] = useState<{
+    blockId: string;
+    request: FocusRequest;
+  } | null>(null);
+  const focusTokenRef = useRef(0);
   const lastActiveBlockIdRef = useRef<string | null>(null);
   const [collapsedHeadings, setCollapsedHeadings] = useState<Set<string>>(() => new Set());
   const [activeHeadingId, setActiveHeadingId] = useState<string | null>(null);
+  const lastNoteIdRef = useRef<string | null>(note?.id ?? null);
   const lastSerializedRef = useRef<string>(note?.content ?? '');
   const blockRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const tableCellRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
 
   // Sync incoming external changes (e.g., WebDAV sync or switching notes)
   useEffect(() => {
     if (!note) return;
-    if (note.content !== lastSerializedRef.current) {
+    if (note.id !== lastNoteIdRef.current) {
+      lastNoteIdRef.current = note.id;
       lastSerializedRef.current = note.content;
-      setBlocks(parseContentToBlocks(note.content));
+      const nextBlocks = parseContentToBlocks(note.content);
+      blocksRef.current = nextBlocks;
+      setBlocks(nextBlocks);
       setCollapsedHeadings(new Set());
       setFocusedBlockId(null);
+      setFocusRequest(null);
+      setActiveHeadingId(null);
+      lastActiveBlockIdRef.current = null;
+      return;
+    }
+    if (note.content !== lastSerializedRef.current) {
+      lastSerializedRef.current = note.content;
+      setBlocks((prev) => {
+        const nextBlocks = parseContentToBlocks(note.content, prev);
+        blocksRef.current = nextBlocks;
+        return nextBlocks;
+      });
+      setCollapsedHeadings(new Set());
     }
   }, [note?.id, note?.content]);
 
@@ -864,7 +422,11 @@ export const NoteView: React.FC<NoteViewProps> = ({ noteId, standalone = false }
 
   const commitBlocks = useCallback(
     (nextBlocks: NoteBlock[]) => {
+      blocksRef.current = nextBlocks;
       setBlocks(nextBlocks);
+      setCollapsedHeadings(
+        (prev) => pruneCollapsedHeadings(nextBlocks, prev) ?? prev,
+      );
       if (!note) return;
       const serialized = serializeBlocksToMarkdown(nextBlocks);
       lastSerializedRef.current = serialized;
@@ -873,145 +435,551 @@ export const NoteView: React.FC<NoteViewProps> = ({ noteId, standalone = false }
     [note, updateNote],
   );
 
-  // Compute headings & collapsed visibility
+  const ensureBlockVisible = useCallback(
+    (nextBlocks: readonly NoteBlock[], targetBlockId: string) => {
+      setCollapsedHeadings(
+        (prev) => uncollapseAncestorsOfBlock(nextBlocks, prev, targetBlockId) ?? prev,
+      );
+    },
+    [],
+  );
+
+  // Compute headings, collapsed visibility & visible block list
   const headings = useMemo(
     () => blocks.filter((b): b is Extract<NoteBlock, { type: 'heading' }> => b.type === 'heading'),
     [blocks],
   );
 
-  const visibleBlocks = useMemo(() => {
-    const out: Array<{ block: NoteBlock; hidden: boolean }> = [];
-    let collapsedLevel: number | null = null;
-    for (const blk of blocks) {
-      if (blk.type === 'heading') {
-        if (collapsedLevel !== null && blk.level <= collapsedLevel) {
-          collapsedLevel = null;
-        }
-        const hidden = collapsedLevel !== null;
-        out.push({ block: blk, hidden });
-        if (!hidden && collapsedHeadings.has(blk.id)) {
-          collapsedLevel = blk.level;
-        }
-      } else {
-        out.push({ block: blk, hidden: collapsedLevel !== null });
-      }
-    }
-    return out;
-  }, [blocks, collapsedHeadings]);
+  const blockVisibility = useMemo(
+    () => computeBlockVisibility(blocks, collapsedHeadings),
+    [blocks, collapsedHeadings],
+  );
 
-  const toggleHeadingCollapse = (headingId: string) => {
+  const hiddenBlockIds = useMemo(() => {
+    const hidden = new Set<string>();
+    for (const entry of blockVisibility) {
+      if (entry.hidden) hidden.add(entry.block.id);
+    }
+    return hidden;
+  }, [blockVisibility]);
+
+  const visibleEntries = useMemo(
+    () => blockVisibility.filter((entry) => !entry.hidden),
+    [blockVisibility],
+  );
+
+  const visibleBlockIds = useMemo(
+    () => visibleEntries.map((entry) => entry.block.id),
+    [visibleEntries],
+  );
+
+  const handleReorderVisibleBlocks = useCallback(
+    (fromVisibleIdx: number, toVisibleIdx: number) => {
+      const next = reorderVisibleBlocks(
+        blocksRef.current,
+        collapsedHeadings,
+        fromVisibleIdx,
+        toVisibleIdx,
+      );
+      if (next !== blocksRef.current) {
+        commitBlocks(next);
+      }
+    },
+    [collapsedHeadings, commitBlocks],
+  );
+
+  const blockDrag = useBlockDragReorder({
+    itemIds: visibleBlockIds,
+    onReorder: handleReorderVisibleBlocks,
+  });
+
+  const dragPhaseRef = useRef(blockDrag.phase);
+  dragPhaseRef.current = blockDrag.phase;
+
+  // Responsive hierarchy step: 20px on standard widths, 16px on very narrow panes (< 420px)
+  const [noteBodyEl, setNoteBodyEl] = useState<HTMLDivElement | null>(null);
+  const [compactHierarchy, setCompactHierarchy] = useState(false);
+
+  const setBlocksContainerRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      blockDrag.containerRef(node);
+      setNoteBodyEl(node);
+    },
+    [blockDrag.containerRef],
+  );
+
+  useEffect(() => {
+    if (!noteBodyEl) return;
+    const updateWidth = () => {
+      const width = noteBodyEl.clientWidth;
+      if (width > 0) {
+        setCompactHierarchy(width < 420);
+      }
+    };
+    updateWidth();
+    const ro = new ResizeObserver(updateWidth);
+    ro.observe(noteBodyEl);
+    return () => ro.disconnect();
+  }, [noteBodyEl]);
+
+  const hierarchyStepPx = compactHierarchy ? 16 : 20;
+
+  const trailingIndentPx = useMemo(() => {
+    const last = visibleEntries[visibleEntries.length - 1];
+    if (!last) return 0;
+    if (
+      last.block.type === 'heading' &&
+      !collapsedHeadings.has(last.block.id)
+    ) {
+      return (last.sectionDepth + 1) * hierarchyStepPx;
+    }
+    return last.sectionDepth * hierarchyStepPx;
+  }, [visibleEntries, collapsedHeadings, hierarchyStepPx]);
+
+  const toggleHeadingCollapse = useCallback((headingId: string) => {
     setCollapsedHeadings((prev) => {
       const next = new Set(prev);
       if (next.has(headingId)) next.delete(headingId);
       else next.add(headingId);
       return next;
     });
-  };
+  }, []);
 
   const scrollToHeading = (headingId: string) => {
     setActiveHeadingId(headingId);
+    if (hiddenBlockIds.has(headingId)) {
+      ensureBlockVisible(blocksRef.current, headingId);
+      window.requestAnimationFrame(() => {
+        blockRefs.current[headingId]?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start',
+        });
+      });
+      return;
+    }
     const el = blockRefs.current[headingId];
     if (el) {
       el.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   };
 
-  const markBlockFocused = (blockId: string) => {
+  const focusTextBlock = useCallback((blockId: string, caret: CaretTarget = 'end') => {
+    focusTokenRef.current += 1;
     setFocusedBlockId(blockId);
     lastActiveBlockIdRef.current = blockId;
-  };
-
-  // Block mutations
-  const updateBlockText = (blockId: string, text: string) => {
-    // Detect "@" trigger at end of text
-    if (text.endsWith('@') || /(?:^|\s)@$/.test(text)) {
-      setReplacingLinkTargetId(null);
-      setLinkSearch('');
-      setShowLinkPicker(true);
-    }
-
-    const next = blocks.map((b) => {
-      if (b.id !== blockId) return b;
-      if (b.type === 'paragraph') {
-        const hm = /^(#{1,3})\s+(.*)$/.exec(text);
-        if (hm) {
-          return {
-            id: b.id,
-            type: 'heading' as const,
-            level: hm[1].length as 1 | 2 | 3,
-            text: hm[2],
-          };
-        }
-        return { ...b, text };
-      }
-      if (b.type === 'heading') {
-        return { ...b, text };
-      }
-      return b;
+    setFocusRequest({
+      blockId,
+      request: { token: focusTokenRef.current, caret },
     });
-    commitBlocks(next);
-  };
+    const blk = blocksRef.current.find((b) => b.id === blockId);
+    if (blk?.type === 'heading') {
+      setActiveHeadingId(blockId);
+    }
+  }, []);
+
+  const focusTableCell = useCallback(
+    (
+      blockId: string,
+      position: 'first' | 'last' | { row: number; col: number },
+      caret: 'start' | 'end' = 'start',
+    ) => {
+      const tbl = blocksRef.current.find((b) => b.id === blockId);
+      if (!tbl || tbl.type !== 'table' || tbl.rows.length === 0) return;
+      const lastRow = tbl.rows.length - 1;
+      const lastCol = Math.max(0, (tbl.rows[lastRow]?.length ?? 1) - 1);
+      const row =
+        position === 'first' ? 0 : position === 'last' ? lastRow : position.row;
+      const col =
+        position === 'first' ? 0 : position === 'last' ? lastCol : position.col;
+      setFocusedBlockId(blockId);
+      lastActiveBlockIdRef.current = blockId;
+      setFocusRequest(null);
+      const key = `${blockId}:${row}:${col}`;
+      window.requestAnimationFrame(() => {
+        const el = tableCellRefs.current[key];
+        if (!el) return;
+        el.focus();
+        const pos = caret === 'end' ? el.value.length : 0;
+        el.setSelectionRange(pos, pos);
+      });
+    },
+    [],
+  );
+
+  const handleFocusDirect = useCallback((blockId: string) => {
+    setFocusedBlockId(blockId);
+    lastActiveBlockIdRef.current = blockId;
+    const blk = blocksRef.current.find((b) => b.id === blockId);
+    if (blk?.type === 'heading') {
+      setActiveHeadingId(blockId);
+    }
+  }, []);
+
+  const handleActivateBlock = useCallback(
+    (blockId: string, caret: CaretTarget = 'end') => {
+      const prevFocused = focusedBlockIdRef.current;
+      if (
+        prevFocused &&
+        prevFocused !== blockId &&
+        dragPhaseRef.current === 'idle'
+      ) {
+        const normalized = normalizeParagraphOnBlur(
+          blocksRef.current,
+          prevFocused,
+        );
+        if (normalized !== blocksRef.current) {
+          commitBlocks(normalized);
+        }
+      }
+      focusTextBlock(blockId, caret);
+    },
+    [commitBlocks, focusTextBlock],
+  );
+
+  const handleBlurBlock = useCallback(
+    (blockId: string) => {
+      setFocusedBlockId((prev) => (prev === blockId ? null : prev));
+      if (dragPhaseRef.current === 'idle') {
+        const normalized = normalizeParagraphOnBlur(blocksRef.current, blockId);
+        if (normalized !== blocksRef.current) {
+          commitBlocks(normalized);
+        }
+      }
+    },
+    [commitBlocks],
+  );
+
+  // Typora live-edit text block mutation (headings & paragraphs)
+  const handleRawBlockChange = useCallback(
+    (
+      blockId: string,
+      raw: string,
+      caretOffset: number | undefined,
+      isComposing: boolean,
+    ) => {
+      const current = blocksRef.current;
+      const prevBlock = current.find((b) => b.id === blockId);
+      const prevRaw =
+        prevBlock && prevBlock.type !== 'table'
+          ? getTextBlockRawMarkdown(prevBlock)
+          : '';
+
+      // Detect newly typed "@" trigger (avoid popping up while backspacing)
+      if (!isComposing && raw.length > prevRaw.length) {
+        const checkPos =
+          typeof caretOffset === 'number' ? caretOffset : raw.length;
+        const prefixBeforeCaret = raw.slice(0, checkPos);
+        if (/(?:^|\s)@$/.test(prefixBeforeCaret)) {
+          setReplacingLinkTargetId(null);
+          setLinkSearch('');
+          setShowLinkPicker(true);
+        }
+      }
+
+      const result = applyLiveTextBlockEdit(
+        current,
+        blockId,
+        raw,
+        caretOffset,
+        isComposing,
+      );
+      commitBlocks(result.blocks);
+
+      const updatedBlock = result.blocks.find(
+        (b) => b.id === result.focusBlockId,
+      );
+      if (updatedBlock?.type === 'heading') {
+        setActiveHeadingId(updatedBlock.id);
+      }
+
+      if (result.didSplit) {
+        ensureBlockVisible(result.blocks, result.focusBlockId);
+        if (updatedBlock?.type === 'table') {
+          focusTableCell(result.focusBlockId, 'last', 'end');
+        } else {
+          focusTextBlock(result.focusBlockId, result.caret ?? 'end');
+        }
+      }
+    },
+    [commitBlocks, ensureBlockVisible, focusTableCell, focusTextBlock],
+  );
+
+  const handleHeadingEnter = useCallback(
+    (blockId: string, selectionStart: number, selectionEnd: number) => {
+      const current = blocksRef.current;
+      const idx = current.findIndex((b) => b.id === blockId);
+      if (idx < 0) return;
+      const blk = current[idx];
+      if (blk.type !== 'heading') return;
+
+      const split = splitHeadingOnEnter(blk, selectionStart, selectionEnd);
+      const next = [
+        ...current.slice(0, idx),
+        ...split.replacement,
+        ...current.slice(idx + 1),
+      ];
+      commitBlocks(next);
+      ensureBlockVisible(next, split.focusBlockId);
+      focusTextBlock(split.focusBlockId, split.caret);
+    },
+    [commitBlocks, ensureBlockVisible, focusTextBlock],
+  );
+
+  const handleParagraphEnter = useCallback(
+    (blockId: string, selectionStart: number, selectionEnd: number) => {
+      const current = blocksRef.current;
+      const idx = current.findIndex((b) => b.id === blockId);
+      if (idx < 0) return;
+      const blk = current[idx];
+      if (blk.type !== 'paragraph') return;
+
+      const split = splitParagraphOnEnter(blk, selectionStart, selectionEnd);
+      const next = [
+        ...current.slice(0, idx),
+        ...split.replacement,
+        ...current.slice(idx + 1),
+      ];
+      commitBlocks(next);
+      ensureBlockVisible(next, split.focusBlockId);
+      focusTextBlock(split.focusBlockId, split.caret);
+    },
+    [commitBlocks, ensureBlockVisible, focusTextBlock],
+  );
+
+  const handleParagraphCtrlEnter = useCallback(
+    (blockId: string) => {
+      const newBlock: NoteBlock = {
+        id: createBlockId(),
+        type: 'paragraph',
+        text: '',
+      };
+      const current = blocksRef.current;
+      const idx = current.findIndex((b) => b.id === blockId);
+      const pos = idx >= 0 ? idx + 1 : current.length;
+      const next = [...current.slice(0, pos), newBlock, ...current.slice(pos)];
+      commitBlocks(next);
+      ensureBlockVisible(next, newBlock.id);
+      focusTextBlock(newBlock.id, 'start');
+    },
+    [commitBlocks, ensureBlockVisible, focusTextBlock],
+  );
+
+  const handleBackspaceAtStart = useCallback(
+    (blockId: string) => {
+      const current = blocksRef.current;
+      const idx = current.findIndex((b) => b.id === blockId);
+      if (idx < 0) return;
+      const res = mergeOrRemoveOnBackspaceAtStart(current, idx, hiddenBlockIds);
+      if (!res) return;
+
+      if (res.blocks !== current) {
+        commitBlocks(res.blocks);
+      }
+      if (!res.focusBlockId) {
+        setFocusedBlockId(null);
+        return;
+      }
+      if (res.focusTableCell) {
+        focusTableCell(
+          res.focusBlockId,
+          res.focusTableCell,
+          res.focusTableCell === 'last' ? 'end' : 'start',
+        );
+      } else {
+        focusTextBlock(res.focusBlockId, res.caret);
+      }
+    },
+    [commitBlocks, focusTableCell, focusTextBlock, hiddenBlockIds],
+  );
+
+  const handleNavigateVertical = useCallback(
+    (blockId: string, direction: 'up' | 'down') => {
+      const visIdx = visibleEntries.findIndex((e) => e.block.id === blockId);
+      if (visIdx < 0) return;
+      const targetVisIdx = direction === 'up' ? visIdx - 1 : visIdx + 1;
+      if (targetVisIdx < 0 || targetVisIdx >= visibleEntries.length) return;
+      const target = visibleEntries[targetVisIdx].block;
+      if (target.type === 'table') {
+        focusTableCell(
+          target.id,
+          direction === 'up' ? 'last' : 'first',
+          direction === 'up' ? 'end' : 'start',
+        );
+      } else {
+        focusTextBlock(target.id, direction === 'up' ? 'end' : 'start');
+      }
+    },
+    [focusTableCell, focusTextBlock, visibleEntries],
+  );
 
   const insertBlockAfter = (afterId: string | null, newBlock: NoteBlock) => {
-    const idx = afterId ? blocks.findIndex((b) => b.id === afterId) : blocks.length - 1;
-    const pos = idx >= 0 ? idx + 1 : blocks.length;
-    const next = [...blocks.slice(0, pos), newBlock, ...blocks.slice(pos)];
+    const current = blocksRef.current;
+    const idx = afterId
+      ? current.findIndex((b) => b.id === afterId)
+      : current.length - 1;
+    const pos = idx >= 0 ? idx + 1 : current.length;
+    const next = [...current.slice(0, pos), newBlock, ...current.slice(pos)];
     commitBlocks(next);
-    markBlockFocused(newBlock.id);
+    ensureBlockVisible(next, newBlock.id);
+    if (newBlock.type === 'table') {
+      focusTableCell(newBlock.id, 'first', 'start');
+    } else {
+      focusTextBlock(newBlock.id, 'start');
+    }
   };
 
   const removeBlock = (blockId: string) => {
-    if (blocks.length <= 1) {
-      commitBlocks([{ id: blockId, type: 'paragraph', text: '' }]);
+    const current = blocksRef.current;
+    if (current.length <= 1) {
+      const fallback: NoteBlock = { id: blockId, type: 'paragraph', text: '' };
+      commitBlocks([fallback]);
+      focusTextBlock(fallback.id, 'start');
       return;
     }
-    commitBlocks(blocks.filter((b) => b.id !== blockId));
-    if (focusedBlockId === blockId) {
+    const visIdx = visibleEntries.findIndex((e) => e.block.id === blockId);
+    const neighbor =
+      visIdx > 0
+        ? visibleEntries[visIdx - 1]?.block
+        : visibleEntries[visIdx + 1]?.block ?? null;
+    commitBlocks(current.filter((b) => b.id !== blockId));
+    if (neighbor) {
+      if (neighbor.type === 'table') {
+        focusTableCell(neighbor.id, visIdx > 0 ? 'last' : 'first');
+      } else {
+        focusTextBlock(neighbor.id, visIdx > 0 ? 'end' : 'start');
+      }
+    } else if (focusedBlockIdRef.current === blockId) {
       setFocusedBlockId(null);
     }
   };
 
+  const resolveActiveBlockId = useCallback(
+    (list: readonly NoteBlock[], focused: string | null): string | undefined => {
+      if (focused && list.some((b) => b.id === focused)) return focused;
+      const last = lastActiveBlockIdRef.current;
+      if (last && list.some((b) => b.id === last)) return last;
+      return list[list.length - 1]?.id;
+    },
+    [],
+  );
+
+  const activeFormatBlock = useMemo(() => {
+    const targetId = resolveActiveBlockId(blocks, focusedBlockId);
+    return targetId ? blocks.find((b) => b.id === targetId) ?? null : null;
+  }, [blocks, focusedBlockId, resolveActiveBlockId]);
+
   const applyFormatAction = (
     kind: 'h1' | 'h2' | 'h3' | 'bold' | 'italic' | 'list' | 'quote' | 'code',
   ) => {
-    const targetId =
-      focusedBlockId ?? lastActiveBlockIdRef.current ?? blocks[blocks.length - 1]?.id;
+    const current = blocksRef.current;
+    const targetId = resolveActiveBlockId(current, focusedBlockIdRef.current);
     if (!targetId) return;
-    const next = blocks.map((b) => {
-      if (b.id !== targetId) return b;
-      if (kind === 'h1' || kind === 'h2' || kind === 'h3') {
-        const level = kind === 'h1' ? 1 : kind === 'h2' ? 2 : 3;
-        const txt = b.type === 'table' ? '标题' : b.text;
-        return { id: b.id, type: 'heading' as const, level: level as 1 | 2 | 3, text: txt };
+
+    if (kind === 'h1' || kind === 'h2' || kind === 'h3') {
+      const level: HeadingLevel = kind === 'h1' ? 1 : kind === 'h2' ? 2 : 3;
+      const res = applyHeadingFormatToBlocks(current, targetId, level);
+      commitBlocks(res.blocks);
+      ensureBlockVisible(res.blocks, res.focusBlockId);
+      focusTextBlock(res.focusBlockId, res.caret);
+      return;
+    }
+
+    const idx = current.findIndex((b) => b.id === targetId);
+    if (idx < 0) return;
+    const target = current[idx];
+
+    if (kind === 'bold' || kind === 'italic') {
+      if (target.type === 'table') return;
+      const snippet = kind === 'bold' ? '**加粗文字**' : '*斜体文字*';
+      const next = current.slice();
+      next[idx] = {
+        ...target,
+        text: target.text ? `${target.text} ${snippet}` : snippet,
+      };
+      commitBlocks(next);
+      ensureBlockVisible(next, target.id);
+      focusTextBlock(target.id, 'end');
+      return;
+    }
+
+    if (kind === 'code') {
+      const codeTemplate = '```\n\n```';
+      if (target.type === 'paragraph' && target.text.trim().length === 0) {
+        const next = current.slice();
+        next[idx] = { id: target.id, type: 'paragraph', text: codeTemplate };
+        commitBlocks(next);
+        ensureBlockVisible(next, target.id);
+        focusTextBlock(target.id, 4);
+        return;
       }
-      if (b.type === 'table') return b;
-      if (kind === 'bold') return { ...b, text: b.text ? `${b.text} **加粗文字**` : '**加粗文字**' };
-      if (kind === 'italic') return { ...b, text: b.text ? `${b.text} *斜体文字*` : '*斜体文字*' };
-      if (kind === 'list') {
-        const prefix = b.text && !b.text.endsWith('\n') ? '\n- ' : '- ';
-        return { id: b.id, type: 'paragraph' as const, text: `${b.text}${prefix}` };
-      }
-      if (kind === 'quote') {
-        const prefix = b.text && !b.text.endsWith('\n') ? '\n> ' : '> ';
-        return { id: b.id, type: 'paragraph' as const, text: `${b.text}${prefix}` };
-      }
-      const prefix = b.text && !b.text.endsWith('\n') ? '\n```\n\n```' : '```\n\n```';
-      return { id: b.id, type: 'paragraph' as const, text: `${b.text}${prefix}` };
-    });
+      const newCodeBlock: NoteBlock = {
+        id: createBlockId(),
+        type: 'paragraph',
+        text: codeTemplate,
+      };
+      const next = [
+        ...current.slice(0, idx + 1),
+        newCodeBlock,
+        ...current.slice(idx + 1),
+      ];
+      commitBlocks(next);
+      ensureBlockVisible(next, newCodeBlock.id);
+      focusTextBlock(newCodeBlock.id, 4);
+      return;
+    }
+
+    // list or quote: never overwrite a heading, table, or fenced code block;
+    // toggle prefix on plain/list/quote paragraphs cleanly for line-granularity blocks
+    const marker = kind === 'list' ? '- ' : '> ';
+    if (
+      target.type === 'heading' ||
+      target.type === 'table' ||
+      isFencedCodeParagraph(target.text)
+    ) {
+      const newBlock: NoteBlock = {
+        id: createBlockId(),
+        type: 'paragraph',
+        text: marker,
+      };
+      const next = [
+        ...current.slice(0, idx + 1),
+        newBlock,
+        ...current.slice(idx + 1),
+      ];
+      commitBlocks(next);
+      ensureBlockVisible(next, newBlock.id);
+      focusTextBlock(newBlock.id, 'end');
+      return;
+    }
+
+    const next = current.slice();
+    const trimmed = target.text;
+    let nextText: string;
+    if (kind === 'list') {
+      nextText = /^\s*[-*•]\s+/.test(trimmed)
+        ? trimmed.replace(/^\s*[-*•]\s+/, '')
+        : `${marker}${trimmed}`;
+    } else {
+      nextText = /^\s*>\s?/.test(trimmed)
+        ? trimmed.replace(/^\s*>\s?/, '')
+        : `${marker}${trimmed}`;
+    }
+    next[idx] = { id: target.id, type: 'paragraph', text: nextText };
     commitBlocks(next);
-    markBlockFocused(targetId);
+    ensureBlockVisible(next, target.id);
+    focusTextBlock(target.id, 'end');
   };
 
   const handleInsertTable = () => {
     const tbl: NoteBlock = {
-      id: `blk_${Date.now().toString(36)}`,
+      id: createBlockId(),
       type: 'table',
       rows: [
         ['事项', '负责人', '状态'],
         ['待补充', '', '进行中'],
       ],
     };
-    insertBlockAfter(focusedBlockId ?? lastActiveBlockIdRef.current, tbl);
+    insertBlockAfter(focusedBlockIdRef.current ?? lastActiveBlockIdRef.current, tbl);
   };
 
   const updateTableCell = (blockId: string, rIdx: number, cIdx: number, val: string) => {
@@ -1687,28 +1655,39 @@ export const NoteView: React.FC<NoteViewProps> = ({ noteId, standalone = false }
         <div className="flex shrink-0 flex-wrap items-center gap-1 border-b bg-coss-frame-well px-3.5 py-1.5">
           {(
             [
-              ['h1', 'H1', Heading1Icon],
-              ['h2', 'H2', Heading2Icon],
-              ['h3', 'H3', Heading3Icon],
-              ['bold', '加粗', BoldIcon],
-              ['italic', '斜体', ItalicIcon],
-              ['list', '列表', ListIcon],
-              ['quote', '引用', QuoteIcon],
-              ['code', '代码', CodeIcon],
+              ['h1', 'H1', Heading1Icon, 1],
+              ['h2', 'H2', Heading2Icon, 2],
+              ['h3', 'H3', Heading3Icon, 3],
+              ['bold', '加粗', BoldIcon, null],
+              ['italic', '斜体', ItalicIcon, null],
+              ['list', '列表', ListIcon, null],
+              ['quote', '引用', QuoteIcon, null],
+              ['code', '代码', CodeIcon, null],
             ] as const
-          ).map(([action, label, IconComp]) => (
-            <Button
-              key={action}
-              size="xs"
-              variant="outline"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => applyFormatAction(action)}
-              className="gap-1 text-foreground"
-            >
-              <IconComp className="size-3" aria-hidden="true" />
-              <span>{label}</span>
-            </Button>
-          ))}
+          ).map(([action, label, IconComp, headingLvl]) => {
+            const isActiveHeading =
+              headingLvl !== null &&
+              activeFormatBlock?.type === 'heading' &&
+              activeFormatBlock.level === headingLvl;
+            return (
+              <Button
+                key={action}
+                size="xs"
+                variant="outline"
+                aria-pressed={headingLvl !== null ? isActiveHeading : undefined}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => applyFormatAction(action)}
+                className={cn(
+                  'gap-1 text-foreground',
+                  isActiveHeading &&
+                    'border-dt-accent-border bg-dt-accent-soft text-dt-accent-soft-text',
+                )}
+              >
+                <IconComp className="size-3" aria-hidden="true" />
+                <span>{label}</span>
+              </Button>
+            );
+          })}
         </div>
       )}
 
@@ -1863,83 +1842,52 @@ export const NoteView: React.FC<NoteViewProps> = ({ noteId, standalone = false }
       {/* ================================================================= */}
       {note.kind === 'normal' && (
         <div className="relative flex min-h-0 flex-1 overflow-hidden">
-          <ScrollArea className="flex-1">
-            <div className="flex flex-col gap-2.5 pt-4 pr-7 pb-8 pl-5">
-              {visibleBlocks.map(({ block, hidden }) => {
-                if (hidden) return null;
+          <ScrollArea className="flex-1 [&_[data-slot=scroll-area-content]]:flex [&_[data-slot=scroll-area-content]]:min-h-full [&_[data-slot=scroll-area-content]]:flex-col">
+            <div
+              ref={setBlocksContainerRef}
+              className="relative flex flex-1 flex-col gap-[4px] pt-4 pr-7 pb-8 pl-[32px]"
+            >
+              <BlockDragDock
+                visible={blockDrag.canReorder}
+                isDragging={blockDrag.isDraggingAny}
+                isArming={blockDrag.phase === 'arming'}
+              />
+              <BlockDropIndicator indicator={blockDrag.dropIndicator} />
 
-                if (block.type === 'heading') {
-                  const isCollapsed = collapsedHeadings.has(block.id);
-                  const headingSizeClass =
-                    block.level === 1
-                      ? 'text-[18px] font-bold tracking-tight mt-0.5'
-                      : block.level === 2
-                        ? 'text-[15px] font-bold mt-1.5'
-                        : 'text-[13.5px] font-semibold mt-1';
-                  return (
-                    <div
-                      key={block.id}
-                      ref={(el) => {
-                        blockRefs.current[block.id] = el;
-                      }}
-                      className={cn(
-                        'dt-note-heading-row -ml-4.5 flex items-center gap-1',
-                        block.level === 1 ? 'mt-0.5' : 'mt-1.5',
-                      )}
-                    >
-                      <button
-                        type="button"
-                        aria-label={isCollapsed ? '展开此节内容' : '折叠此节内容'}
-                        title={isCollapsed ? '展开此节内容' : '折叠此节内容'}
-                        onClick={() => toggleHeadingCollapse(block.id)}
-                        className={cn(
-                          'inline-flex size-4.5 shrink-0 cursor-pointer items-center justify-center rounded border-none bg-transparent p-0 transition-colors hover:bg-accent',
-                          isCollapsed ? 'text-dt-accent' : 'text-muted-foreground/75 hover:text-foreground',
-                        )}
-                      >
-                        {isCollapsed ? (
-                          <ChevronRightIcon className="size-3.5" aria-hidden="true" />
-                        ) : (
-                          <ChevronDownIcon className="size-3.5" aria-hidden="true" />
-                        )}
-                      </button>
+              {visibleEntries.map((entry, visibleIndex) => {
+                const { block } = entry;
+                const dragBindings = blockDrag.getItemBindings(block.id, visibleIndex);
+                const handleAlign =
+                  block.type === 'heading'
+                    ? 'center'
+                    : block.type === 'table'
+                      ? 'table'
+                      : 'top';
 
-                      <input
-                        type="text"
-                        value={block.text}
-                        onFocus={() => {
-                          markBlockFocused(block.id);
-                          setActiveHeadingId(block.id);
-                        }}
-                        onChange={(e) => updateBlockText(block.id, e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-                            e.preventDefault();
-                            insertBlockAfter(block.id, {
-                              id: `blk_${Date.now().toString(36)}`,
-                              type: 'paragraph',
-                              text: '',
-                            });
-                          } else if (e.key === 'Backspace' && block.text === '') {
-                            e.preventDefault();
-                            removeBlock(block.id);
-                          }
-                        }}
-                        placeholder={`标题 ${block.level}`}
-                        className={cn(
-                          'min-w-0 flex-1 border-none bg-transparent p-0 leading-[1.35] text-foreground outline-none placeholder:text-muted-foreground/50',
-                          headingSizeClass,
-                        )}
-                      />
-
-                      {isCollapsed && (
-                        <Badge variant="secondary" size="sm" className="shrink-0">
-                          已折叠
-                        </Badge>
-                      )}
-                    </div>
-                  );
-                }
+                const nextSectionDepth =
+                  visibleEntries[visibleIndex + 1]?.sectionDepth ?? 0;
+                const { indentPx, guideOffsetsPx } = computeBlockHierarchyLayout(
+                  entry,
+                  hierarchyStepPx,
+                );
+                // Explicit px margins keep guide stem bleeds locked at every Settings bodyFontSize (12px–18px)
+                const blockSpacingClass =
+                  block.type === 'heading' && visibleIndex > 0
+                    ? block.level === 1
+                      ? 'mt-[12px]'
+                      : 'mt-[8px]'
+                    : block.type === 'table'
+                      ? 'my-[4px]'
+                      : undefined;
+                const guideTopBleedPx =
+                  block.type === 'heading' && visibleIndex > 0
+                    ? block.level === 1
+                      ? 14
+                      : 10
+                    : block.type === 'table'
+                      ? 6
+                      : 3;
+                const guideBottomBleedPx = block.type === 'table' ? 6 : 3;
 
                 if (block.type === 'table') {
                   const headerRow = block.rows[0] ?? [];
@@ -1949,195 +1897,255 @@ export const NoteView: React.FC<NoteViewProps> = ({ noteId, standalone = false }
                   const colWidths = computeTableColumnWidths(block.rows);
 
                   return (
-                    <CardFrame key={block.id} className="my-1">
-                      <CardFrameHeader className="items-center gap-x-2 border-b border-border/70 px-3 py-2">
-                        <CardFrameTitle className="flex min-w-0 items-center gap-1.5 font-medium text-muted-foreground text-xs">
-                          <TableIcon
-                            className="size-3.5 shrink-0 opacity-75"
-                            aria-hidden="true"
-                          />
-                          <span className="truncate tabular-nums">
-                            表格 · {colCount} 列 × {dataRowCount} 行
-                          </span>
-                        </CardFrameTitle>
+                    <SortableBlockItem
+                      key={block.id}
+                      blockId={block.id}
+                      dragBindings={dragBindings}
+                      handleAlign={handleAlign}
+                      indentPx={indentPx}
+                      guideOffsetsPx={guideOffsetsPx}
+                      guideTopBleedPx={guideTopBleedPx}
+                      guideBottomBleedPx={guideBottomBleedPx}
+                      guideContinuingDepth={nextSectionDepth}
+                      className={blockSpacingClass}
+                      blockRef={(el) => {
+                        blockRefs.current[block.id] = el;
+                      }}
+                    >
+                      <CardFrame>
+                        <CardFrameHeader className="items-center gap-x-2 border-b border-border/70 px-3 py-2">
+                          <CardFrameTitle className="flex min-w-0 items-center gap-1.5 font-medium text-muted-foreground text-xs">
+                            <TableIcon
+                              className="size-3.5 shrink-0 opacity-75"
+                              aria-hidden="true"
+                            />
+                            <span className="truncate tabular-nums">
+                              表格 · {colCount} 列 × {dataRowCount} 行
+                            </span>
+                          </CardFrameTitle>
 
-                        <CardFrameAction className="flex items-center gap-1">
-                          <Button
-                            size="xs"
-                            variant="outline"
-                            onClick={() => mutateTable(block.id, 'addRow')}
-                            className="h-5.5 px-1.5 text-[11px]"
-                          >
-                            + 行
-                          </Button>
-                          <Button
-                            size="xs"
-                            variant="outline"
-                            onClick={() => mutateTable(block.id, 'addCol')}
-                            className="h-5.5 px-1.5 text-[11px]"
-                          >
-                            + 列
-                          </Button>
-                          <Menu>
-                            <MenuTrigger
-                              render={
-                                <Button
-                                  aria-label="表格更多操作"
-                                  size="icon-xs"
-                                  variant="ghost"
-                                  className="size-5.5 text-muted-foreground hover:text-foreground"
-                                />
-                              }
+                          <CardFrameAction className="flex items-center gap-1">
+                            <Button
+                              size="xs"
+                              variant="outline"
+                              onClick={() => mutateTable(block.id, 'addRow')}
+                              className="h-5.5 px-1.5 text-[11px]"
                             >
-                              <EllipsisIcon className="size-3.5" aria-hidden="true" />
-                            </MenuTrigger>
-                            <MenuPopup align="end" sideOffset={4}>
-                              <MenuItem
-                                disabled={block.rows.length <= 2}
-                                onClick={() => mutateTable(block.id, 'delRow')}
+                              + 行
+                            </Button>
+                            <Button
+                              size="xs"
+                              variant="outline"
+                              onClick={() => mutateTable(block.id, 'addCol')}
+                              className="h-5.5 px-1.5 text-[11px]"
+                            >
+                              + 列
+                            </Button>
+                            <Menu>
+                              <MenuTrigger
+                                render={
+                                  <Button
+                                    aria-label="表格更多操作"
+                                    size="icon-xs"
+                                    variant="ghost"
+                                    className="size-5.5 text-muted-foreground hover:text-foreground"
+                                  />
+                                }
                               >
-                                <Rows3Icon aria-hidden="true" />
-                                <span>删除末行 (- 行)</span>
-                              </MenuItem>
-                              <MenuItem
-                                disabled={colCount <= 2}
-                                onClick={() => mutateTable(block.id, 'delCol')}
-                              >
-                                <Columns3Icon aria-hidden="true" />
-                                <span>删除末列 (- 列)</span>
-                              </MenuItem>
-                              <MenuSeparator />
-                              <MenuItem
-                                variant="destructive"
-                                onClick={() => removeBlock(block.id)}
-                              >
-                                <Trash2Icon aria-hidden="true" />
-                                <span>删除表格</span>
-                              </MenuItem>
-                            </MenuPopup>
-                          </Menu>
-                        </CardFrameAction>
-                      </CardFrameHeader>
+                                <EllipsisIcon className="size-3.5" aria-hidden="true" />
+                              </MenuTrigger>
+                              <MenuPopup align="end" sideOffset={4}>
+                                <MenuItem
+                                  disabled={block.rows.length <= 2}
+                                  onClick={() => mutateTable(block.id, 'delRow')}
+                                >
+                                  <Rows3Icon aria-hidden="true" />
+                                  <span>删除末行 (- 行)</span>
+                                </MenuItem>
+                                <MenuItem
+                                  disabled={colCount <= 2}
+                                  onClick={() => mutateTable(block.id, 'delCol')}
+                                >
+                                  <Columns3Icon aria-hidden="true" />
+                                  <span>删除末列 (- 列)</span>
+                                </MenuItem>
+                                <MenuSeparator />
+                                <MenuItem
+                                  variant="destructive"
+                                  onClick={() => removeBlock(block.id)}
+                                >
+                                  <Trash2Icon aria-hidden="true" />
+                                  <span>删除表格</span>
+                                </MenuItem>
+                              </MenuPopup>
+                            </Menu>
+                          </CardFrameAction>
+                        </CardFrameHeader>
 
-                      <Table
-                        variant="card"
-                        className={cn(
-                          'w-full table-fixed text-xs',
-                          colCount > 4 && 'min-w-[440px]',
-                        )}
-                      >
-                        <colgroup>
-                          {colWidths.map((pct, cIdx) => (
-                            <col key={cIdx} style={{ width: `${pct}%` }} />
-                          ))}
-                        </colgroup>
-                        <TableHeader>
-                          <TableRow className="border-b-0">
-                            {headerRow.map((cell, cIdx) => (
-                              <TableHead
-                                key={cIdx}
-                                className="h-auto whitespace-normal border-r border-border/50 px-2.5 py-2 align-top font-medium text-muted-foreground text-xs last:border-r-0"
-                              >
-                                <CellAutoTextarea
-                                  value={cell}
-                                  placeholder={`列 ${cIdx + 1}`}
-                                  onFocus={() => markBlockFocused(block.id)}
-                                  onChange={(val) => updateTableCell(block.id, 0, cIdx, val)}
-                                  className="font-medium text-muted-foreground"
-                                />
-                              </TableHead>
+                        <Table
+                          variant="card"
+                          className={cn(
+                            'w-full table-fixed text-xs',
+                            colCount > 4 && 'min-w-[440px]',
+                          )}
+                        >
+                          <colgroup>
+                            {colWidths.map((pct, cIdx) => (
+                              <col key={cIdx} style={{ width: `${pct}%` }} />
                             ))}
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {bodyRows.map((row, bodyIdx) => {
-                            const rIdx = bodyIdx + 1;
-                            return (
-                              <TableRow key={rIdx}>
-                                {row.map((cell, cIdx) => (
-                                  <TableCell
-                                    key={cIdx}
-                                    className="whitespace-normal border-r border-border/50 px-2.5 py-2 align-top last:border-r-0"
-                                  >
-                                    <CellAutoTextarea
-                                      value={cell}
-                                      placeholder="—"
-                                      onFocus={() => markBlockFocused(block.id)}
-                                      onChange={(val) =>
-                                        updateTableCell(block.id, rIdx, cIdx, val)
+                          </colgroup>
+                          <TableHeader>
+                            <TableRow className="border-b-0">
+                              {headerRow.map((cell, cIdx) => (
+                                <TableHead
+                                  key={cIdx}
+                                  className="h-auto whitespace-normal border-r border-border/50 px-2.5 py-2 align-top font-medium text-muted-foreground text-xs last:border-r-0"
+                                >
+                                  <CellAutoTextarea
+                                    value={cell}
+                                    placeholder={`列 ${cIdx + 1}`}
+                                    textareaRef={(el) => {
+                                      tableCellRefs.current[`${block.id}:0:${cIdx}`] = el;
+                                    }}
+                                    onFocus={() => handleFocusDirect(block.id)}
+                                    onChange={(val) => updateTableCell(block.id, 0, cIdx, val)}
+                                    onNavigateUp={() => handleNavigateVertical(block.id, 'up')}
+                                    onNavigateDown={() => {
+                                      if (block.rows.length > 1) {
+                                        focusTableCell(block.id, { row: 1, col: cIdx }, 'start');
+                                      } else {
+                                        handleNavigateVertical(block.id, 'down');
                                       }
-                                      className={
-                                        cIdx === 0
-                                          ? 'font-semibold text-foreground'
-                                          : 'text-foreground/90'
-                                      }
-                                    />
-                                  </TableCell>
-                                ))}
-                              </TableRow>
-                            );
-                          })}
-                        </TableBody>
-                      </Table>
-                    </CardFrame>
+                                    }}
+                                    className="font-medium text-muted-foreground"
+                                  />
+                                </TableHead>
+                              ))}
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {bodyRows.map((row, bodyIdx) => {
+                              const rIdx = bodyIdx + 1;
+                              const isLastRow = rIdx === block.rows.length - 1;
+                              return (
+                                <TableRow key={rIdx}>
+                                  {row.map((cell, cIdx) => (
+                                    <TableCell
+                                      key={cIdx}
+                                      className="whitespace-normal border-r border-border/50 px-2.5 py-2 align-top last:border-r-0"
+                                    >
+                                      <CellAutoTextarea
+                                        value={cell}
+                                        placeholder="—"
+                                        textareaRef={(el) => {
+                                          tableCellRefs.current[`${block.id}:${rIdx}:${cIdx}`] = el;
+                                        }}
+                                        onFocus={() => handleFocusDirect(block.id)}
+                                        onChange={(val) =>
+                                          updateTableCell(block.id, rIdx, cIdx, val)
+                                        }
+                                        onNavigateUp={() => {
+                                          focusTableCell(
+                                            block.id,
+                                            { row: rIdx - 1, col: cIdx },
+                                            'end',
+                                          );
+                                        }}
+                                        onNavigateDown={() => {
+                                          if (!isLastRow) {
+                                            focusTableCell(
+                                              block.id,
+                                              { row: rIdx + 1, col: cIdx },
+                                              'start',
+                                            );
+                                          } else {
+                                            handleNavigateVertical(block.id, 'down');
+                                          }
+                                        }}
+                                        className={
+                                          cIdx === 0
+                                            ? 'font-semibold text-foreground'
+                                            : 'text-foreground/90'
+                                        }
+                                      />
+                                    </TableCell>
+                                  ))}
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
+                      </CardFrame>
+                    </SortableBlockItem>
                   );
                 }
 
-                // Paragraph / list / quote / code block
-                const isEditingBlock =
-                  focusedBlockId === block.id || block.text.trim().length === 0;
+                // Unified Typora-style Heading & Paragraph Block
+                const isFocused = focusedBlockId === block.id;
+                const activeFocusReq =
+                  isFocused && focusRequest?.blockId === block.id
+                    ? focusRequest.request
+                    : null;
 
                 return (
-                  <div key={block.id}>
-                    {isEditingBlock ? (
-                      <AutoTextarea
-                        value={block.text}
-                        autoFocus={focusedBlockId === block.id}
-                        onFocus={() => markBlockFocused(block.id)}
-                        onBlur={() => {
-                          if (focusedBlockId === block.id) {
-                            setFocusedBlockId(null);
-                          }
-                        }}
-                        onChange={(val) => updateBlockText(block.id, val)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Backspace' && block.text === '' && blocks.length > 1) {
-                            e.preventDefault();
-                            removeBlock(block.id);
-                          } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                            e.preventDefault();
-                            insertBlockAfter(block.id, {
-                              id: `blk_${Date.now().toString(36)}`,
-                              type: 'paragraph',
-                              text: '',
-                            });
-                          }
-                        }}
-                        placeholder="输入正文，输入 # 创建标题，输入 @ 关联待办或便签…"
-                      />
-                    ) : (
-                      <RichParagraphDisplay
-                        text={block.text}
-                        onActivate={() => markBlockFocused(block.id)}
-                      />
-                    )}
-                  </div>
+                  <SortableBlockItem
+                    key={block.id}
+                    blockId={block.id}
+                    dragBindings={dragBindings}
+                    handleAlign={handleAlign}
+                    indentPx={indentPx}
+                    guideOffsetsPx={guideOffsetsPx}
+                    guideTopBleedPx={guideTopBleedPx}
+                    guideBottomBleedPx={guideBottomBleedPx}
+                    guideContinuingDepth={nextSectionDepth}
+                    className={blockSpacingClass}
+                    blockRef={(el) => {
+                      blockRefs.current[block.id] = el;
+                    }}
+                  >
+                    <TyporaTextBlock
+                      block={block}
+                      isFocused={isFocused}
+                      focusRequest={activeFocusReq}
+                      isCollapsed={
+                        block.type === 'heading' && collapsedHeadings.has(block.id)
+                      }
+                      compactHierarchy={compactHierarchy}
+                      onFocusDirect={handleFocusDirect}
+                      onActivate={handleActivateBlock}
+                      onBlurBlock={handleBlurBlock}
+                      onRawChange={handleRawBlockChange}
+                      onHeadingEnter={handleHeadingEnter}
+                      onParagraphEnter={handleParagraphEnter}
+                      onParagraphCtrlEnter={handleParagraphCtrlEnter}
+                      onBackspaceAtStart={handleBackspaceAtStart}
+                      onNavigateVertical={handleNavigateVertical}
+                      onToggleCollapse={toggleHeadingCollapse}
+                    />
+                  </SortableBlockItem>
                 );
               })}
 
-              {/* Add new paragraph subtle trigger */}
-              <div className="pt-1">
+              {/* Add new paragraph subtle trigger aligned with trailing section indent */}
+              <div
+                className="pt-1.5"
+                style={
+                  trailingIndentPx > 0
+                    ? { paddingLeft: `${trailingIndentPx}px` }
+                    : undefined
+                }
+              >
                 <Button
                   size="xs"
                   variant="ghost"
                   onClick={() =>
                     insertBlockAfter(blocks[blocks.length - 1]?.id ?? null, {
-                      id: `blk_${Date.now().toString(36)}`,
+                      id: createBlockId(),
                       type: 'paragraph',
                       text: '',
                     })
                   }
-                  className="text-muted-foreground hover:text-foreground"
+                  className="-ml-1.5 text-muted-foreground hover:text-foreground"
                 >
                   <PlusIcon className="size-3" aria-hidden="true" />
                   <span>新段落</span>

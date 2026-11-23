@@ -136,7 +136,7 @@ function formatBytes(bytes: number): string {
 function getFallbackAppVersion(): string {
   return typeof __APP_VERSION__ === 'string' && __APP_VERSION__.trim()
     ? __APP_VERSION__
-    : '1.2.0';
+    : '1.3.0';
 }
 
 function formatInstallKindLabel(kind: InstallKind): string {

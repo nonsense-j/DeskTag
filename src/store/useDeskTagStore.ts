@@ -435,7 +435,7 @@ function defaultPlatformInfo(): PlatformInfo {
   const isWin = /Windows/i.test(ua);
   const platform = isAndroid ? 'android' : isMac ? 'macos' : isWin ? 'windows' : 'linux';
   const appVersion =
-    typeof __APP_VERSION__ === 'string' && __APP_VERSION__.trim() ? __APP_VERSION__ : '1.2.0';
+    typeof __APP_VERSION__ === 'string' && __APP_VERSION__.trim() ? __APP_VERSION__ : '1.3.0';
   return {
     platform,
     isDesktop: !isAndroid,

@@ -22,7 +22,7 @@ DeskTag 基于 **Tauri v2 + Rust + React 19 + TypeScript + coss ui (Base UI) + T
 
 ### 3. 普通与时间轴便签 (Normal & Timeline Notes)
 - **双模式便签**：支持常规结构化便签（Normal）与按时间倒序记录的流水账/日志便签（Timeline）。
-- **结构化编辑体验**：支持可折叠标题、自动目录大纲（Outline）、Markdown 表格、图片/文件/音频附件，以及通过 `@` 双向关联待办与便签。
+- **Typora 风格实时 Markdown 编辑与拖拽排布**：支持聚焦行内显隐 `#`/`##`/`###` 实时标题编辑（无缝 Enter 拆分与跨块导航）、带纵向树形引导线的嵌套层级对齐、左侧半透明拖拽坞逐行/折叠章节原子拖拽，以及自动目录大纲（Outline）、Markdown 表格、图片/文件/音频附件与 `@` 双向关联。
 - **独立便签窗与隐私锁**：支持将常用便签弹出为独立窗口查看，支持单篇便签分组隐私加锁保护。
 
 ### 4. 日历、四象限与智能提醒 (Calendar, Quadrants & Reminders)
@@ -113,7 +113,7 @@ pnpm tauri android build --apk --target aarch64
 **DeskTag** is an independent, open-source, cross-platform edge-docked sticky-note & todo companion powered by **Tauri v2, Rust, React 19, TypeScript, coss ui (Base UI), and Tailwind CSS v4**, targeting **Windows, macOS (Apple Silicon & Intel), and Android**.
 
 - **Desktop Edge Docking**: 6 docking modes (`Left / Right / Top` × `Protruding Side Tabs / Full Auto-Hide`), multi-monitor work-area clamping, system tray, and global hotkeys (`Alt+Shift+D`, `Alt+Shift+N`).
-- **Productivity Suite & coss ui**: Redesigned with **coss ui (Base UI + Tailwind CSS v4)**, CardFrame tables, and a horizontal-tab Settings & WebDAV experience; todos with subtasks, progress pills, natural-language date/priority parsing, batch paste, custom pinned lists, Normal & Timeline notes (collapsible headings, outline, Markdown tables, attachments, `@` cross-links, privacy lock), standalone Calendar with Chinese lunar dates, solar terms & continuous multi-day task spans, Four Quadrants (Eisenhower Matrix), standard & recurring reminders with DND quiet hours, 12 original built-in themes (default `素墨极简` + new native dark theme `极夜纯粹`), and local backup/export to **Word (`.docx`), PDF, HTML, Markdown, and CSV**.
+- **Productivity Suite & coss ui**: Redesigned with **coss ui (Base UI + Tailwind CSS v4)**, CardFrame tables, and a horizontal-tab Settings & WebDAV experience; todos with subtasks, progress pills, natural-language date/priority parsing, batch paste, custom pinned lists, Normal & Timeline notes (Typora-style live-edit headings, nested heading hierarchy with vertical tree guides, per-line & collapsed-section block drag dock, collapsible headings, outline, Markdown tables, attachments, `@` cross-links, privacy lock), standalone Calendar with Chinese lunar dates, solar terms & continuous multi-day task spans, Four Quadrants (Eisenhower Matrix), standard & recurring reminders with DND quiet hours, 12 original built-in themes (default `素墨极简` + new native dark theme `极夜纯粹`), and local backup/export to **Word (`.docx`), PDF, HTML, Markdown, and CSV**.
 - **E2EE WebDAV Sync**: Client-side `AES-256-GCM` + `PBKDF2-SHA256` (600,000 iterations) encryption, 3-way per-item merge with tombstones, hardened compatibility for Nutstore, 123pan, TeraCLOUD, Synology NAS, Alist/OpenList, and Nextcloud, plus Dry-Run `Preview`, one-click `UndoSync`, and `desktag-sync:...` one-paste mobile onboarding (excluding the encryption passphrase).
 
 ---
